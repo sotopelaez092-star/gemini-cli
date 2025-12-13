@@ -817,6 +817,15 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
         return;
       }
 
+      // Ctrl+Shift+C for copying input to clipboard
+      if (keyMatchers[Command.COPY_INPUT](key)) {
+        if (buffer.text.length > 0) {
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          clipboardy.write(buffer.text);
+        }
+        return;
+      }
+
       // Fall back to the text buffer's default input handling for all other keys
       buffer.handleInput(key);
 
