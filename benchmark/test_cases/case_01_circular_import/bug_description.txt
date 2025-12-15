@@ -1,0 +1,15 @@
+Bug Type: Circular Import (循环导入)
+Difficulty: Medium
+Files Involved: 2
+
+Description:
+order_service.py imports UserService from user_service.py
+user_service.py imports OrderService from order_service.py
+This creates a circular dependency that causes ImportError.
+
+Expected Fix:
+1. Use lazy import (import inside function)
+2. Or restructure to break the cycle
+3. Or use dependency injection
+
+Test Command: python test_case.py

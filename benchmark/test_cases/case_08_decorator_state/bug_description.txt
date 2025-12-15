@@ -1,0 +1,27 @@
+Bug Type: Decorator State & Service Registration Order (装饰器状态和服务注册顺序)
+Difficulty: Very Hard
+Files Involved: 5
+
+Description:
+Multiple interconnected bugs:
+
+1. The @service decorator immediately creates an instance when the class is defined
+2. UserService.__init__ depends on LoggerService being registered first
+3. services/__init__.py imports UserService before LoggerService
+4. This causes UserService to be instantiated before LoggerService is registered
+
+The bug chain:
+services/__init__.py imports user_service first
+→ @service("user") decorator runs
+→ UserService() is instantiated
+→ UserService.__init__ tries to get "logger" from registry
+→ LoggerService hasn't been imported/registered yet
+→ RuntimeError: "Logger service not found!"
+
+Expected Fix (multiple valid approaches):
+1. Change import order in services/__init__.py (quick fix)
+2. Use lazy initialization in the decorator (better fix)
+3. Don't create instance in decorator, just register the class
+4. Use dependency injection framework properly
+
+Test Command: python test_case.py

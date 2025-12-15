@@ -1,0 +1,17 @@
+Bug Type: Inheritance Chain Break (继承链断裂)
+Difficulty: Medium
+Files Involved: 4
+
+Description:
+JsonHandler.__init__() overrides the parent's __init__ without calling super().__init__()
+This breaks the inheritance chain:
+1. BaseHandler._initialized is never set
+2. DataHandler.processed_count is never set
+3. Calling is_ready() raises AttributeError
+
+CsvHandler is provided as a correct example for comparison.
+
+Expected Fix:
+Add super().__init__(config) call in JsonHandler.__init__()
+
+Test Command: python test_case.py

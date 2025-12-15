@@ -1,0 +1,18 @@
+Bug Type: Config Field Name Mismatch (配置字段名不匹配)
+Difficulty: Medium
+Files Involved: 4
+
+Description:
+Configuration field names were changed but dependent code wasn't updated:
+1. DatabaseConfig.url -> DatabaseConfig.connection_string
+   - database/connection.py still uses self.config.url
+2. CacheConfig.password -> CacheConfig.auth_token
+   - cache/redis_cache.py still uses self.config.password
+
+This is a common refactoring issue where field names are changed but not all usages are updated.
+
+Expected Fix:
+1. Update database/connection.py to use self.config.connection_string
+2. Update cache/redis_cache.py to use self.config.auth_token
+
+Test Command: python test_case.py

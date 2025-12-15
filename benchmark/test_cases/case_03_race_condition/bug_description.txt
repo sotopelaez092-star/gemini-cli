@@ -1,0 +1,19 @@
+Bug Type: Race Condition (竞态条件)
+Difficulty: Hard
+Files Involved: 3
+
+Description:
+The AccountService.transfer() method has a race condition:
+1. It reads the balance of both accounts
+2. Performs calculation
+3. Writes back the new balances
+
+When multiple threads run transfer() concurrently, they may read stale data
+and overwrite each other's updates, causing balance inconsistency.
+
+Expected Fix:
+1. Add a lock around the read-modify-write operation
+2. Or use atomic database operations
+3. Ensure the transfer operation is atomic
+
+Test Command: python test_case.py

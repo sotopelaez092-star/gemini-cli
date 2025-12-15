@@ -1,0 +1,16 @@
+Bug Type: Interface Mismatch (接口签名不匹配)
+Difficulty: Medium
+Files Involved: 3
+
+Description:
+1. User model was updated to require a 'role' field
+2. UserService.create_user() doesn't accept 'role' parameter
+3. UserAPI.register_user() tries to pass 'role' to create_user()
+
+This is a common scenario when a data model is updated but not all dependent code is synchronized.
+
+Expected Fix:
+1. Update UserService.create_user() to accept and use role parameter
+2. Ensure role is properly passed through the entire chain
+
+Test Command: python test_case.py

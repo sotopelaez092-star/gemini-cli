@@ -1,0 +1,17 @@
+Bug Type: Event Timing Issue (事件时序错误)
+Difficulty: Hard
+Files Involved: 4
+
+Description:
+In OrderService.create_order():
+1. Event "order_created" is published BEFORE the order is saved to database
+2. NotificationService listens to this event and tries to query the order
+3. Since the order hasn't been saved yet, the query fails
+
+This is a common timing issue in event-driven architectures.
+
+Expected Fix:
+1. Save the order to database BEFORE publishing the event
+2. Or include all necessary data in the event payload
+
+Test Command: python test_case.py

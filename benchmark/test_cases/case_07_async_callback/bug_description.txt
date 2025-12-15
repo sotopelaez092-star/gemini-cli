@@ -1,0 +1,19 @@
+Bug Type: Async Callback Order Issue (异步回调顺序问题)
+Difficulty: Hard
+Files Involved: 3
+
+Description:
+In TaskQueue.process():
+1. Callbacks are triggered BEFORE the task is actually executed
+2. NotificationService.on_email_task_complete expects task.status == "completed"
+3. But when callback runs, status is still "pending"
+
+This is a common issue in async/callback-based systems where the order of operations matters.
+
+Expected Fix:
+Move the callback triggering to AFTER the task execution and status update:
+1. Execute handler
+2. Update task.status and task.result
+3. THEN trigger callbacks
+
+Test Command: python test_case.py
