@@ -281,6 +281,7 @@ Please fix this error."""
             "--no-git",  # Don't use git
             "--no-auto-commits",  # Don't auto commit
             "--no-suggest-shell-commands",  # Don't suggest shell commands
+            "--no-show-model-warnings",  # Suppress model warnings
         ] + file_args
 
         try:
