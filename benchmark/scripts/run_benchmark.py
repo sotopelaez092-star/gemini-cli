@@ -196,7 +196,7 @@ class BenchmarkRunner:
         elif self.cli_tool == "claude":
             result = self._run_claude(work_dir, prompt)
         elif self.cli_tool == "pyfix":
-            result = self._run_debugagent(work_dir, prompt)
+            result = self._run_debugagent(work_dir, prompt, error_file)
         else:
             result = self._run_gemini(work_dir, prompt)
         duration_ms = (time.time() - start_time) * 1000
@@ -636,7 +636,7 @@ Please fix this error."""
                 }
             }
 
-    def _run_debugagent(self, work_dir: Path, prompt: str) -> dict:
+    def _run_debugagent(self, work_dir: Path, prompt: str, error_file: str = "main.py") -> dict:
         """Run PyFix debug agent.
 
         Supports two modes:
@@ -645,19 +645,21 @@ Please fix this error."""
         """
         import asyncio
 
-        # Find the main file to fix (check root first, then subdirectories)
-        main_file = work_dir / "main.py"
+        # Use the error_file from metadata (not hardcoded main.py)
+        main_file = work_dir / error_file
         if not main_file.exists():
-            # Try to find main.py in subdirectories
-            main_files = list(work_dir.glob("**/main.py"))
-            if main_files:
-                main_file = main_files[0]
+            # Fall back to searching for main.py or any .py file
+            if (work_dir / "main.py").exists():
+                main_file = work_dir / "main.py"
             else:
-                # Fall back to any .py file
-                py_files = list(work_dir.glob("**/*.py"))
-                if not py_files:
-                    return {"error": {"type": "NoFile", "message": "No Python files found"}}
-                main_file = py_files[0]
+                main_files = list(work_dir.glob("**/main.py"))
+                if main_files:
+                    main_file = main_files[0]
+                else:
+                    py_files = list(work_dir.glob("**/*.py"))
+                    if not py_files:
+                        return {"error": {"type": "NoFile", "message": "No Python files found"}}
+                    main_file = py_files[0]
 
         # Check if we should use direct import mode
         pyfix_path = os.environ.get("PYFIX_PATH")
