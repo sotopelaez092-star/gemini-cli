@@ -86,6 +86,13 @@ class TestResult:
     gemini_response: str = ""
     raw_output: dict = field(default_factory=dict)
     fix_quality: Optional[FixQuality] = None
+    # Detailed failure tracking
+    failure_reason: str = ""  # Why it failed (category)
+    failure_stage: str = ""   # Where it failed (ai_call, verification, etc.)
+    original_error: str = ""  # The original Python error we tried to fix
+    verification_error: str = ""  # Error from verification run (if failed)
+    files_changed: list = field(default_factory=list)  # Which files were modified
+    ai_fix_attempt: str = ""  # What the AI tried to do (summary)
 
 
 @dataclass
@@ -118,6 +125,9 @@ class BenchmarkSummary:
     # Legacy fields for backwards compatibility
     avg_quality_score: float = 0.0  # Alias for avg_quality_all
     avg_minimal_changes: float = 0.0
+    # Detailed failure tracking
+    failed_cases: list = field(default_factory=list)  # List of failed case details
+    failure_by_reason: dict = field(default_factory=dict)  # Count by failure reason
 
 
 class BenchmarkRunner:
@@ -192,33 +202,174 @@ class BenchmarkRunner:
         duration_ms = (time.time() - start_time) * 1000
 
         # Parse result
-        success = result.get("error") is None
+        ai_success = result.get("error") is None
         tokens_used = self._extract_tokens(result)
         tool_calls = self._extract_tool_calls(result)
+
+        # Initialize failure tracking
+        failure_reason = ""
+        failure_stage = ""
+        verification_error = ""
+        files_changed = []
+        ai_fix_attempt = ""
+
+        # Track which files were changed
+        files_changed = self._get_changed_files(case_dir, work_dir)
 
         # Verify the fix
         verification_passed = False
         fix_quality = None
-        if success:
-            verification_passed = self._verify_fix(work_dir, error_file)
-            # Evaluate fix quality if verification passed
-            if verification_passed:
+
+        if not ai_success:
+            # AI tool itself failed
+            failure_stage = "ai_call"
+            error_info = result.get("error", {})
+            error_type_str = error_info.get("type", "Unknown")
+            error_msg = error_info.get("message", "Unknown error")
+
+            if error_type_str == "Timeout":
+                failure_reason = "timeout"
+            elif error_type_str == "FixFailed":
+                failure_reason = "fix_failed"
+            elif "import" in error_msg.lower():
+                failure_reason = "import_error"
+            else:
+                failure_reason = f"ai_error_{error_type_str.lower()}"
+
+            ai_fix_attempt = error_msg[:500]
+        else:
+            # AI succeeded, now verify
+            verification_passed, verification_error = self._verify_fix_detailed(
+                work_dir, error_file
+            )
+
+            if not verification_passed:
+                failure_stage = "verification"
+                # Categorize verification failure
+                verr_lower = verification_error.lower()
+                if "modulenotfounderror" in verr_lower or "no module named" in verr_lower:
+                    failure_reason = "module_not_found"
+                elif "importerror" in verr_lower:
+                    failure_reason = "import_still_broken"
+                elif "nameerror" in verr_lower:
+                    failure_reason = "name_error_not_fixed"
+                elif "typeerror" in verr_lower:
+                    if "argument" in verr_lower:
+                        failure_reason = "signature_mismatch"
+                    else:
+                        failure_reason = "type_error_introduced"
+                elif "attributeerror" in verr_lower:
+                    failure_reason = "attribute_error_not_fixed"
+                elif "keyerror" in verr_lower:
+                    failure_reason = "key_error_not_fixed"
+                elif "indexerror" in verr_lower:
+                    failure_reason = "index_error_not_fixed"
+                elif "syntaxerror" in verr_lower:
+                    failure_reason = "syntax_error_introduced"
+                elif "recursionerror" in verr_lower or "circular" in verr_lower:
+                    failure_reason = "circular_import_not_fixed"
+                else:
+                    failure_reason = "verification_failed_other"
+
+                # Summarize what the AI tried to do
+                ai_fix_attempt = self._summarize_changes(case_dir, work_dir, files_changed)
+            else:
+                # Verification passed, evaluate quality
                 fix_quality = self._evaluate_fix_quality(case_dir, work_dir, metadata)
+
+        overall_success = ai_success and verification_passed
 
         return TestResult(
             case_id=case_id,
             error_type=error_type,
-            success=success and verification_passed,
+            success=overall_success,
             duration_ms=duration_ms,
             tokens_used=tokens_used,
             tool_calls=tool_calls,
-            error_message=result.get("error", {}).get("message") if not success else None,
-            fix_applied=success,
+            error_message=result.get("error", {}).get("message") if not ai_success else None,
+            fix_applied=ai_success,
             verification_passed=verification_passed,
             gemini_response=result.get("response", ""),
             raw_output=result,
             fix_quality=fix_quality,
+            # Detailed failure tracking
+            failure_reason=failure_reason,
+            failure_stage=failure_stage,
+            original_error=error_output[:1000],
+            verification_error=verification_error[:1000] if verification_error else "",
+            files_changed=files_changed,
+            ai_fix_attempt=ai_fix_attempt[:500] if ai_fix_attempt else "",
         )
+
+    def _get_changed_files(self, case_dir: Path, work_dir: Path) -> list:
+        """Get list of files that were changed by the AI."""
+        changed = []
+        for fixed_file in work_dir.glob("**/*.py"):
+            rel_path = str(fixed_file.relative_to(work_dir))
+            orig_file = case_dir / rel_path
+            if not orig_file.exists():
+                changed.append(f"+{rel_path}")  # New file
+            elif orig_file.read_text() != fixed_file.read_text():
+                changed.append(rel_path)  # Modified file
+        # Check for deleted files
+        for orig_file in case_dir.glob("**/*.py"):
+            rel_path = str(orig_file.relative_to(case_dir))
+            if not (work_dir / rel_path).exists():
+                changed.append(f"-{rel_path}")  # Deleted file
+        return changed
+
+    def _verify_fix_detailed(self, work_dir: Path, error_file: str) -> tuple:
+        """Verify the fix and return (passed, error_output)."""
+        try:
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(work_dir)
+
+            result = subprocess.run(
+                [sys.executable, error_file],
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                env=env,
+            )
+
+            error_output = result.stderr or ""
+            passed = result.returncode == 0 and not any(
+                err in error_output.lower()
+                for err in ["error", "exception", "traceback"]
+            )
+            return passed, error_output
+        except subprocess.TimeoutExpired:
+            return False, "Timeout during verification"
+        except Exception as e:
+            return False, str(e)
+
+    def _summarize_changes(self, case_dir: Path, work_dir: Path, files_changed: list) -> str:
+        """Summarize what changes the AI made."""
+        summaries = []
+        for rel_path in files_changed[:3]:  # Limit to first 3 files
+            if rel_path.startswith("+"):
+                summaries.append(f"Created new file: {rel_path[1:]}")
+            elif rel_path.startswith("-"):
+                summaries.append(f"Deleted file: {rel_path[1:]}")
+            else:
+                # Show a brief diff
+                orig_file = case_dir / rel_path
+                fixed_file = work_dir / rel_path
+                if orig_file.exists() and fixed_file.exists():
+                    orig_lines = orig_file.read_text().splitlines()
+                    fixed_lines = fixed_file.read_text().splitlines()
+                    diff = list(difflib.unified_diff(
+                        orig_lines, fixed_lines, lineterm='', n=1
+                    ))
+                    # Extract key changes (additions/removals)
+                    key_changes = [
+                        l for l in diff[3:10]  # Skip headers, first few lines
+                        if l.startswith('+') or l.startswith('-')
+                    ]
+                    if key_changes:
+                        summaries.append(f"{rel_path}: {' | '.join(key_changes[:3])}")
+        return "; ".join(summaries) if summaries else "No changes detected"
 
     def _capture_python_error(self, work_dir: Path, error_file: str) -> str:
         """Run the Python file and capture the error."""
@@ -1248,6 +1399,29 @@ Please fix this error."""
             # Legacy field alias
             stats["avg_quality"] = stats["avg_quality_all"]
 
+        # === COLLECT FAILED CASE DETAILS ===
+        failed_cases = []
+        failure_by_reason = {}
+        for r in results:
+            if not r.success:
+                # Build detailed failure info
+                failed_case = {
+                    "case_id": r.case_id,
+                    "error_type": r.error_type,
+                    "failure_stage": r.failure_stage,
+                    "failure_reason": r.failure_reason,
+                    "duration_ms": r.duration_ms,
+                    "files_changed": r.files_changed,
+                    "original_error": r.original_error[:300] if r.original_error else "",
+                    "verification_error": r.verification_error[:300] if r.verification_error else "",
+                    "ai_fix_attempt": r.ai_fix_attempt,
+                }
+                failed_cases.append(failed_case)
+
+                # Count by failure reason
+                reason = r.failure_reason or "unknown"
+                failure_by_reason[reason] = failure_by_reason.get(reason, 0) + 1
+
         return BenchmarkSummary(
             total_cases=len(results),
             passed=passed,
@@ -1276,6 +1450,9 @@ Please fix this error."""
             # Legacy fields
             avg_quality_score=avg_quality_all,
             avg_minimal_changes=avg_minimality,
+            # Detailed failure tracking
+            failed_cases=failed_cases,
+            failure_by_reason=failure_by_reason,
         )
 
     def _save_results(self, results: list[TestResult], summary: BenchmarkSummary):
@@ -1338,7 +1515,56 @@ def print_summary(summary: BenchmarkSummary):
         print(f"    Avg Duration: {stats['avg_duration_ms']:.0f}ms")
         print(f"    Quality (all): {stats.get('avg_quality_all', 0):.2f}  "
               f"(success-only): {stats.get('avg_quality_success_only', 0):.2f}")
-    print("=" * 60)
+
+    # === DETAILED FAILURE REPORT ===
+    if summary.failed_cases:
+        print("\n" + "=" * 60)
+        print("DETAILED FAILURE REPORT")
+        print("=" * 60)
+
+        # Summary by failure reason
+        if summary.failure_by_reason:
+            print("\nFailure Reasons Summary:")
+            print("-" * 40)
+            for reason, count in sorted(summary.failure_by_reason.items(), key=lambda x: -x[1]):
+                print(f"  {reason}: {count}")
+
+        # Individual failure details
+        print("\n" + "-" * 60)
+        print("Individual Failures:")
+        print("-" * 60)
+        for i, case in enumerate(summary.failed_cases, 1):
+            print(f"\n[{i}] {case['case_id']}")
+            print(f"    Error Type: {case['error_type']}")
+            print(f"    Failure Stage: {case['failure_stage']}")
+            print(f"    Failure Reason: {case['failure_reason']}")
+            print(f"    Duration: {case['duration_ms']:.0f}ms")
+
+            if case['files_changed']:
+                print(f"    Files Changed: {', '.join(case['files_changed'][:5])}")
+
+            if case['original_error']:
+                # Show first meaningful line of original error
+                orig_lines = case['original_error'].strip().split('\n')
+                error_line = next(
+                    (l for l in reversed(orig_lines) if 'Error' in l or 'Exception' in l),
+                    orig_lines[-1] if orig_lines else "N/A"
+                )
+                print(f"    Original Error: {error_line[:80]}")
+
+            if case['verification_error']:
+                # Show first meaningful line of verification error
+                verr_lines = case['verification_error'].strip().split('\n')
+                verr_line = next(
+                    (l for l in reversed(verr_lines) if 'Error' in l or 'Exception' in l),
+                    verr_lines[-1] if verr_lines else "N/A"
+                )
+                print(f"    Verification Error: {verr_line[:80]}")
+
+            if case['ai_fix_attempt']:
+                print(f"    AI Fix Attempt: {case['ai_fix_attempt'][:100]}")
+
+    print("\n" + "=" * 60)
 
 
 def main():
