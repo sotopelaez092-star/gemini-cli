@@ -7,5 +7,7 @@
   "expected_fix": "Lazy load plugins OR pass registry as parameter instead of importing",
   "difficulty": "hard",
   "files_involved": ["plugins/__init__.py", "plugins/registry.py", "plugins/base_plugin.py"],
-  "cycle": ["plugins.__init__", "base_plugin", "plugins.__init__"]
+  "cycle": ["plugins.__init__", "base_plugin", "plugins.__init__"],
+  "expected_lines_to_change": 3,
+  "optimal_fix": "Lazy load or use dependency injection for registry"
 }

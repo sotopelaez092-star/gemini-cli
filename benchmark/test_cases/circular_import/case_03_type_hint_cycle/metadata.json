@@ -7,5 +7,7 @@
   "expected_fix": "Use TYPE_CHECKING guard: from typing import TYPE_CHECKING; if TYPE_CHECKING: from models.order import Order",
   "difficulty": "hard",
   "files_involved": ["models/order.py", "models/order_item.py"],
-  "cycle": ["order", "order_item", "order"]
+  "cycle": ["order", "order_item", "order"],
+  "expected_lines_to_change": 3,
+  "optimal_fix": "Use TYPE_CHECKING guard for type annotation imports"
 }

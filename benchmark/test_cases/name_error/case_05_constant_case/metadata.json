@@ -7,5 +7,7 @@
   "expected_fix": "API_TIMEOUT -> Api_Timeout (match the actual definition)",
   "difficulty": "medium",
   "files_involved": ["main.py", "config/settings.py"],
-  "note": "Codebase has inconsistent naming, need to match actual definition"
+  "note": "Codebase has inconsistent naming, need to match actual definition",
+  "expected_lines_to_change": 2,
+  "optimal_fix": "Fix import and usage from 'API_TIMEOUT' to 'Api_Timeout'"
 }

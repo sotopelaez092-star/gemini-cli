@@ -6,5 +6,7 @@
   "error_message": "TypeError: NotificationService.send_bulk() missing 1 required positional argument: 'body'",
   "expected_fix": "Create instance first: service = NotificationService(); service.send_bulk(...)",
   "difficulty": "medium",
-  "files_involved": ["main.py", "services/notification.py"]
+  "files_involved": ["main.py", "services/notification.py"],
+  "expected_lines_to_change": 2,
+  "optimal_fix": "Create instance and call method on it"
 }

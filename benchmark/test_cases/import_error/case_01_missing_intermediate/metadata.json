@@ -6,5 +6,7 @@
   "error_message": "ModuleNotFoundError: No module named 'api.endpoints'",
   "expected_fix": "from api.endpoints.users -> from api.v2.endpoints.users",
   "difficulty": "medium",
-  "files_involved": ["main.py", "api/v2/endpoints/users.py"]
+  "files_involved": ["main.py", "api/v2/endpoints/users.py"],
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Fix import path from 'api.endpoints.users' to 'api.v2.endpoints.users'"
 }

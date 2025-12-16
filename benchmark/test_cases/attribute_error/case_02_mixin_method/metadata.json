@@ -7,5 +7,7 @@
   "expected_fix": "to_jason -> to_json",
   "difficulty": "hard",
   "files_involved": ["main.py", "models/article.py", "models/base_content.py", "models/mixins.py"],
-  "note": "Method is in SerializableMixin, multiple inheritance path"
+  "note": "Method is in SerializableMixin, multiple inheritance path",
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Fix typo 'to_jason' to 'to_json' in main.py"
 }

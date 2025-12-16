@@ -6,5 +6,7 @@
   "error_message": "KeyError: 'log_level'",
   "expected_fix": "config['log_level'] -> config['logging']['level']",
   "difficulty": "hard",
-  "files_involved": ["main.py", "config_loader.py"]
+  "files_involved": ["main.py", "config_loader.py"],
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Update key path to new structure"
 }

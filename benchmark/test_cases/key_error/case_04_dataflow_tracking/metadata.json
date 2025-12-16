@@ -7,5 +7,7 @@
   "expected_fix": "user_data['name'] -> user_data['full_name']",
   "difficulty": "hard",
   "files_involved": ["main.py", "services/user_service.py", "repositories/user_repository.py", "models/user.py"],
-  "note": "Must trace: main.py -> UserService -> UserRepository -> User.to_dict()"
+  "note": "Must trace: main.py -> UserService -> UserRepository -> User.to_dict()",
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Fix key 'name' to 'full_name'"
 }

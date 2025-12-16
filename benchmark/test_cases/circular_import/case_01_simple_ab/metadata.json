@@ -7,5 +7,7 @@
   "expected_fix": "Move import inside method OR use dependency injection",
   "difficulty": "medium",
   "files_involved": ["main.py", "module_a.py", "module_b.py"],
-  "cycle": ["module_a", "module_b", "module_a"]
+  "cycle": ["module_a", "module_b", "module_a"],
+  "expected_lines_to_change": 3,
+  "optimal_fix": "Move import inside function to break cycle"
 }

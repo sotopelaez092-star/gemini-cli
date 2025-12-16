@@ -6,5 +6,7 @@
   "error_message": "ModuleNotFoundError: No module named 'base'",
   "expected_fix": "from base -> from src.handlers.base or from .base",
   "difficulty": "hard",
-  "files_involved": ["src/handlers/user_handler.py", "src/handlers/base.py"]
+  "files_involved": ["src/handlers/user_handler.py", "src/handlers/base.py"],
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Fix import to use relative import 'from .base' or absolute 'from src.handlers.base'"
 }

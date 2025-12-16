@@ -6,5 +6,7 @@
   "error_message": "KeyError: 'API_KEY'",
   "expected_fix": "config['API_KEY'] -> config['APP_API_KEY']",
   "difficulty": "medium",
-  "files_involved": ["main.py", "env_loader.py"]
+  "files_involved": ["main.py", "env_loader.py"],
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Add 'APP_' prefix to key"
 }

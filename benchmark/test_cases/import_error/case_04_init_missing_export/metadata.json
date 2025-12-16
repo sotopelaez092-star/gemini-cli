@@ -6,5 +6,7 @@
   "error_message": "ImportError: cannot import name 'PaymentValidator' from 'payment'",
   "expected_fix": "Add 'from payment.validator import PaymentValidator' to payment/__init__.py OR change import in main.py",
   "difficulty": "medium",
-  "files_involved": ["main.py", "payment/__init__.py", "payment/validator.py"]
+  "files_involved": ["main.py", "payment/__init__.py", "payment/validator.py"],
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Change main.py import to 'from payment.validator import PaymentValidator'"
 }

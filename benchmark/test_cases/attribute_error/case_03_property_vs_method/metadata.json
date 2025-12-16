@@ -6,5 +6,7 @@
   "error_message": "'float' object is not callable",
   "expected_fix": "order.total() -> order.total (remove parentheses)",
   "difficulty": "medium",
-  "files_involved": ["main.py", "models/order.py"]
+  "files_involved": ["main.py", "models/order.py"],
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Remove parentheses: 'order.total()' to 'order.total'"
 }

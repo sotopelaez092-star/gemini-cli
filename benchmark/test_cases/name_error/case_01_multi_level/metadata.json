@@ -7,5 +7,7 @@
   "expected_fix": "proccess_metrics -> process_metrics",
   "difficulty": "medium",
   "files_involved": ["app/main.py", "app/services/analytics.py"],
-  "requires_exploration": true
+  "requires_exploration": true,
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Fix typo 'proccess_metrics' to 'process_metrics' in main.py"
 }

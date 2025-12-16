@@ -6,5 +6,7 @@
   "error_message": "TypeError: Expected list, got dict",
   "expected_fix": "Use aggregate_dict_values(data) OR aggregate_values(list(data.values()))",
   "difficulty": "medium",
-  "files_involved": ["main.py", "data_processing.py"]
+  "files_involved": ["main.py", "data_processing.py"],
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Use dict-specific function or convert dict to list"
 }

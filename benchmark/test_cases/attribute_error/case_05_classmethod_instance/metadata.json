@@ -6,5 +6,7 @@
   "error_message": "'UserFactory' object has no attribute 'create_from_dict'",
   "expected_fix": "factory.create_from_dict -> UserFactory.from_dict or factory.from_dict",
   "difficulty": "hard",
-  "files_involved": ["main.py", "factories/user_factory.py"]
+  "files_involved": ["main.py", "factories/user_factory.py"],
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Change 'create_from_dict' to 'from_dict'"
 }

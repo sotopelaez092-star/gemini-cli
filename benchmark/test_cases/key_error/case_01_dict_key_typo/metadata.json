@@ -6,5 +6,7 @@
   "error_message": "KeyError: 'hostname'",
   "expected_fix": "hostname -> host",
   "difficulty": "easy",
-  "files_involved": ["main.py", "config.py"]
+  "files_involved": ["main.py", "config.py"],
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Fix key 'hostname' to 'host'"
 }

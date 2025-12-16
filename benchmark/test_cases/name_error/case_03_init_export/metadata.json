@@ -6,5 +6,7 @@
   "error_message": "cannot import name 'validata_email' from 'validators'",
   "expected_fix": "validata_email -> validate_email",
   "difficulty": "medium",
-  "files_involved": ["main.py", "validators/__init__.py", "validators/email_validator.py"]
+  "files_involved": ["main.py", "validators/__init__.py", "validators/email_validator.py"],
+  "expected_lines_to_change": 2,
+  "optimal_fix": "Fix import statement and usage of 'validata_email' to 'validate_email'"
 }

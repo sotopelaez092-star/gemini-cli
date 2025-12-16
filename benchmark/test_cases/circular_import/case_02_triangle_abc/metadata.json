@@ -7,5 +7,7 @@
   "expected_fix": "Break cycle by using lazy imports or dependency injection",
   "difficulty": "hard",
   "files_involved": ["services/auth_service.py", "services/user_service.py", "services/audit_service.py"],
-  "cycle": ["auth_service", "user_service", "audit_service", "auth_service"]
+  "cycle": ["auth_service", "user_service", "audit_service", "auth_service"],
+  "expected_lines_to_change": 4,
+  "optimal_fix": "Use lazy imports or dependency injection to break cycle"
 }

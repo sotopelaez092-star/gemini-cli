@@ -6,5 +6,7 @@
   "error_message": "TypeError: calculate_area() got some positional-only arguments passed as keyword arguments: 'shape, dim1, dim2'",
   "expected_fix": "calculate_area(shape='rectangle', width=10, height=5) -> calculate_area('rectangle', 10, 5)",
   "difficulty": "hard",
-  "files_involved": ["main.py", "geometry/shapes.py"]
+  "files_involved": ["main.py", "geometry/shapes.py"],
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Change keyword args to positional args"
 }

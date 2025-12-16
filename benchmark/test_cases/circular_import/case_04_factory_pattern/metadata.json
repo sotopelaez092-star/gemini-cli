@@ -7,5 +7,7 @@
   "expected_fix": "Remove type hint import OR use string annotation 'ShapeFactory'",
   "difficulty": "hard",
   "files_involved": ["factory/shape_factory.py", "shapes/circle.py"],
-  "cycle": ["shape_factory", "circle", "shape_factory"]
+  "cycle": ["shape_factory", "circle", "shape_factory"],
+  "expected_lines_to_change": 2,
+  "optimal_fix": "Use string annotation for type hints to avoid import"
 }

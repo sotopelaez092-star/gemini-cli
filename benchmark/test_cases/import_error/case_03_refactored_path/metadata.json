@@ -7,5 +7,7 @@
   "expected_fix": "from utils.* -> from shared.utils.*",
   "difficulty": "hard",
   "files_involved": ["main.py", "shared/utils/string_helpers.py", "shared/utils/date_helpers.py"],
-  "note": "Requires understanding the new project structure"
+  "note": "Requires understanding the new project structure",
+  "expected_lines_to_change": 2,
+  "optimal_fix": "Update import paths from 'utils.*' to 'shared.utils.*'"
 }

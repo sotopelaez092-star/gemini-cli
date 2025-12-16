@@ -6,5 +6,7 @@
   "error_message": "NameError: name 'timit' is not defined",
   "expected_fix": "@timit -> @time_it",
   "difficulty": "hard",
-  "files_involved": ["main.py", "decorators/__init__.py", "decorators/timing.py"]
+  "files_involved": ["main.py", "decorators/__init__.py", "decorators/timing.py"],
+  "expected_lines_to_change": 2,
+  "optimal_fix": "Fix import and decorator usage from 'timit' to 'time_it'"
 }

@@ -7,5 +7,7 @@
   "expected_fix": "process_date -> process_data",
   "difficulty": "hard",
   "files_involved": ["main.py", "data_handlers.py", "utils/date_utils.py"],
-  "confusion_candidates": ["process_data", "process_date", "parse_date", "format_date"]
+  "confusion_candidates": ["process_data", "process_date", "parse_date", "format_date"],
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Fix typo 'process_date' to 'process_data' in main.py"
 }

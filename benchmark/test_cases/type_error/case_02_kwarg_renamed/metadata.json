@@ -6,5 +6,7 @@
   "error_message": "TypeError: HttpClient.get() got an unexpected keyword argument 'timeout_seconds'",
   "expected_fix": "timeout_seconds -> timeout",
   "difficulty": "hard",
-  "files_involved": ["main.py", "http_client.py"]
+  "files_involved": ["main.py", "http_client.py"],
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Rename kwarg 'timeout_seconds' to 'timeout'"
 }

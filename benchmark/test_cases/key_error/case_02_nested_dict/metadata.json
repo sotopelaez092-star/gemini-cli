@@ -6,5 +6,7 @@
   "error_message": "KeyError: 'email'",
   "expected_fix": "response['data']['email'] -> response['data']['user']['email']",
   "difficulty": "medium",
-  "files_involved": ["main.py", "api_response.py"]
+  "files_involved": ["main.py", "api_response.py"],
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Add ['user'] level to access path"
 }

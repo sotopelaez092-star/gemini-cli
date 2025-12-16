@@ -6,5 +6,7 @@
   "error_message": "'EncryptionService' object has no attribute '_encrypt'",
   "expected_fix": "_encrypt -> _do_encrypt OR use public method encrypt()",
   "difficulty": "medium",
-  "files_involved": ["main.py", "services/encryption.py"]
+  "files_involved": ["main.py", "services/encryption.py"],
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Change '_encrypt' to '_do_encrypt' or use public 'encrypt()'"
 }

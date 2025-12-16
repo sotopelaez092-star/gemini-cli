@@ -6,5 +6,7 @@
   "error_message": "TypeError: calculate_compound_interest() takes 3 positional arguments but 4 were given",
   "expected_fix": "Remove compounds_per_year OR use calculate_compound_interest_custom",
   "difficulty": "medium",
-  "files_involved": ["main.py", "utils/calculator.py"]
+  "files_involved": ["main.py", "utils/calculator.py"],
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Remove extra argument or use alternative function"
 }

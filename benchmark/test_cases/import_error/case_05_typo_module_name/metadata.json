@@ -6,5 +6,7 @@
   "error_message": "ModuleNotFoundError: No module named 'services.authentification'",
   "expected_fix": "authentification -> authentication",
   "difficulty": "easy",
-  "files_involved": ["main.py", "services/authentication.py"]
+  "files_involved": ["main.py", "services/authentication.py"],
+  "expected_lines_to_change": 1,
+  "optimal_fix": "Fix typo 'authentification' to 'authentication'"
 }

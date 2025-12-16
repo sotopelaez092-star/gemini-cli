@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import difflib
 import json
 import os
 import shutil
@@ -21,6 +22,20 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+
+@dataclass
+class FixQuality:
+    """Quality assessment of a code fix."""
+    minimal_changes: float  # 0-1: How minimal were the changes?
+    style_preserved: float  # 0-1: Was original style preserved?
+    no_extra_code: float    # 0-1: No unnecessary additions?
+    overall_score: float    # 0-1: Overall quality
+    analysis: str           # Detailed analysis
+    lines_changed: int
+    lines_added: int
+    lines_removed: int
+    expected_changes: int   # Expected number of lines to change
 
 
 @dataclass
@@ -36,6 +51,7 @@ class TestResult:
     verification_passed: bool = False
     gemini_response: str = ""
     raw_output: dict = field(default_factory=dict)
+    fix_quality: Optional[FixQuality] = None
 
 
 @dataclass
@@ -48,6 +64,12 @@ class BenchmarkSummary:
     avg_tokens: float
     by_error_type: dict = field(default_factory=dict)
     timestamp: str = ""
+    # Quality metrics
+    avg_quality_score: float = 0.0
+    avg_minimal_changes: float = 0.0
+    avg_style_preserved: float = 0.0
+    avg_no_extra_code: float = 0.0
+    quality_grade: str = ""  # A, B, C, D, F
 
 
 class BenchmarkRunner:
@@ -124,8 +146,12 @@ class BenchmarkRunner:
 
         # Verify the fix
         verification_passed = False
+        fix_quality = None
         if success:
             verification_passed = self._verify_fix(work_dir, error_file)
+            # Evaluate fix quality if verification passed
+            if verification_passed:
+                fix_quality = self._evaluate_fix_quality(case_dir, work_dir, metadata)
 
         return TestResult(
             case_id=case_id,
@@ -139,6 +165,7 @@ class BenchmarkRunner:
             verification_passed=verification_passed,
             gemini_response=result.get("response", ""),
             raw_output=result,
+            fix_quality=fix_quality,
         )
 
     def _capture_python_error(self, work_dir: Path, error_file: str) -> str:
@@ -370,6 +397,180 @@ Please fix this error."""
         except Exception:
             return False
 
+    def _evaluate_fix_quality(
+        self, case_dir: Path, work_dir: Path, metadata: dict
+    ) -> FixQuality:
+        """Evaluate the quality of the fix based on multiple criteria."""
+        # Get expected changes from metadata
+        expected_lines = metadata.get("expected_lines_to_change", 1)
+        fix_description = metadata.get("optimal_fix", "")
+
+        # Compare all Python files
+        lines_changed = 0
+        lines_added = 0
+        lines_removed = 0
+        all_diffs = []
+
+        py_files = list(case_dir.glob("**/*.py"))
+        for orig_file in py_files:
+            rel_path = orig_file.relative_to(case_dir)
+            fixed_file = work_dir / rel_path
+
+            if not fixed_file.exists():
+                lines_removed += len(orig_file.read_text().splitlines())
+                continue
+
+            orig_lines = orig_file.read_text().splitlines(keepends=True)
+            fixed_lines = fixed_file.read_text().splitlines(keepends=True)
+
+            diff = list(difflib.unified_diff(orig_lines, fixed_lines, lineterm=''))
+
+            for line in diff:
+                if line.startswith('+') and not line.startswith('+++'):
+                    lines_added += 1
+                elif line.startswith('-') and not line.startswith('---'):
+                    lines_removed += 1
+
+            if diff:
+                all_diffs.append(f"File: {rel_path}\n" + ''.join(diff))
+
+        # Check for new files (shouldn't normally happen)
+        for fixed_file in work_dir.glob("**/*.py"):
+            rel_path = fixed_file.relative_to(work_dir)
+            orig_file = case_dir / rel_path
+            if not orig_file.exists():
+                lines_added += len(fixed_file.read_text().splitlines())
+
+        lines_changed = lines_added + lines_removed
+
+        # Calculate quality scores
+        # 1. Minimal changes: penalize if changed more than expected
+        if expected_lines > 0:
+            change_ratio = lines_changed / expected_lines
+            if change_ratio <= 1.0:
+                minimal_score = 1.0
+            elif change_ratio <= 2.0:
+                minimal_score = 0.8
+            elif change_ratio <= 3.0:
+                minimal_score = 0.5
+            else:
+                minimal_score = max(0.0, 1.0 - (change_ratio - 1) * 0.2)
+        else:
+            minimal_score = 1.0 if lines_changed == 0 else 0.5
+
+        # 2. Style preservation: check indentation, line length consistency
+        style_score = self._check_style_preservation(case_dir, work_dir)
+
+        # 3. No extra code: penalize adding comments, docstrings, prints unnecessarily
+        extra_penalty = self._check_extra_code(case_dir, work_dir)
+        no_extra_score = max(0.0, 1.0 - extra_penalty)
+
+        # Overall score (weighted average)
+        overall_score = (
+            minimal_score * 0.4 +
+            style_score * 0.3 +
+            no_extra_score * 0.3
+        )
+
+        # Build analysis string
+        analysis_parts = []
+        if lines_changed > expected_lines * 2:
+            analysis_parts.append(f"Too many changes ({lines_changed} vs expected {expected_lines})")
+        if extra_penalty > 0:
+            analysis_parts.append("Added unnecessary code")
+        if style_score < 0.8:
+            analysis_parts.append("Style inconsistencies detected")
+        if overall_score >= 0.9:
+            analysis_parts.append("Excellent fix quality")
+        elif overall_score >= 0.7:
+            analysis_parts.append("Good fix quality")
+        elif overall_score >= 0.5:
+            analysis_parts.append("Acceptable fix quality")
+        else:
+            analysis_parts.append("Poor fix quality - over-engineered")
+
+        if all_diffs:
+            analysis_parts.append("\nDiff:\n" + "\n".join(all_diffs[:500]))  # Truncate if too long
+
+        return FixQuality(
+            minimal_changes=minimal_score,
+            style_preserved=style_score,
+            no_extra_code=no_extra_score,
+            overall_score=overall_score,
+            analysis="; ".join(analysis_parts) if analysis_parts else "No analysis available",
+            lines_changed=lines_changed,
+            lines_added=lines_added,
+            lines_removed=lines_removed,
+            expected_changes=expected_lines,
+        )
+
+    def _check_style_preservation(self, case_dir: Path, work_dir: Path) -> float:
+        """Check if original code style is preserved."""
+        score = 1.0
+
+        for orig_file in case_dir.glob("**/*.py"):
+            rel_path = orig_file.relative_to(case_dir)
+            fixed_file = work_dir / rel_path
+
+            if not fixed_file.exists():
+                continue
+
+            orig_text = orig_file.read_text()
+            fixed_text = fixed_file.read_text()
+
+            # Check indentation style (tabs vs spaces)
+            orig_uses_tabs = '\t' in orig_text
+            fixed_uses_tabs = '\t' in fixed_text
+            if orig_uses_tabs != fixed_uses_tabs:
+                score -= 0.2
+
+            # Check if quotes style changed significantly
+            orig_single = orig_text.count("'")
+            orig_double = orig_text.count('"')
+            fixed_single = fixed_text.count("'")
+            fixed_double = fixed_text.count('"')
+
+            # If original used mostly single quotes but fix uses mostly double (or vice versa)
+            if orig_single > orig_double * 2 and fixed_double > fixed_single * 2:
+                score -= 0.1
+            elif orig_double > orig_single * 2 and fixed_single > fixed_double * 2:
+                score -= 0.1
+
+        return max(0.0, score)
+
+    def _check_extra_code(self, case_dir: Path, work_dir: Path) -> float:
+        """Check for unnecessary additions like comments, prints, docstrings."""
+        penalty = 0.0
+
+        for fixed_file in work_dir.glob("**/*.py"):
+            rel_path = fixed_file.relative_to(work_dir)
+            orig_file = case_dir / rel_path
+
+            if not orig_file.exists():
+                penalty += 0.3  # New file is usually over-engineering
+                continue
+
+            orig_lines = orig_file.read_text().splitlines()
+            fixed_lines = fixed_file.read_text().splitlines()
+
+            # Count specific patterns
+            for line in fixed_lines:
+                stripped = line.strip()
+                # Check for added debug prints
+                if stripped.startswith("print(") and stripped not in [l.strip() for l in orig_lines]:
+                    penalty += 0.1
+                # Check for added comments that weren't there
+                if stripped.startswith("#") and stripped not in [l.strip() for l in orig_lines]:
+                    penalty += 0.05
+
+            # Check for added docstrings
+            orig_docstrings = orig_file.read_text().count('"""')
+            fixed_docstrings = fixed_file.read_text().count('"""')
+            if fixed_docstrings > orig_docstrings:
+                penalty += 0.1
+
+        return min(1.0, penalty)
+
     def run_all(self, error_type: Optional[str] = None) -> BenchmarkSummary:
         """Run all test cases and return summary."""
         cases = self.discover_test_cases(error_type)
@@ -420,6 +621,32 @@ Please fix this error."""
         passed = sum(1 for r in results if r.success)
         failed = len(results) - passed
 
+        # Calculate quality metrics for successful fixes
+        quality_results = [r for r in results if r.fix_quality is not None]
+        if quality_results:
+            avg_quality = sum(r.fix_quality.overall_score for r in quality_results) / len(quality_results)
+            avg_minimal = sum(r.fix_quality.minimal_changes for r in quality_results) / len(quality_results)
+            avg_style = sum(r.fix_quality.style_preserved for r in quality_results) / len(quality_results)
+            avg_no_extra = sum(r.fix_quality.no_extra_code for r in quality_results) / len(quality_results)
+
+            # Assign grade based on overall quality
+            if avg_quality >= 0.9:
+                grade = "A"
+            elif avg_quality >= 0.8:
+                grade = "B"
+            elif avg_quality >= 0.7:
+                grade = "C"
+            elif avg_quality >= 0.6:
+                grade = "D"
+            else:
+                grade = "F"
+        else:
+            avg_quality = 0.0
+            avg_minimal = 0.0
+            avg_style = 0.0
+            avg_no_extra = 0.0
+            grade = "N/A"
+
         # Group by error type
         by_error_type = {}
         for r in results:
@@ -430,6 +657,7 @@ Please fix this error."""
                     "failed": 0,
                     "avg_duration_ms": 0.0,
                     "avg_tokens": 0.0,
+                    "avg_quality": 0.0,
                 }
             by_error_type[r.error_type]["total"] += 1
             if r.success:
@@ -444,6 +672,11 @@ Please fix this error."""
             stats["avg_tokens"] = sum(r.tokens_used for r in type_results) / len(type_results)
             stats["success_rate"] = stats["passed"] / stats["total"] * 100
 
+            # Quality for this error type
+            type_quality = [r for r in type_results if r.fix_quality is not None]
+            if type_quality:
+                stats["avg_quality"] = sum(r.fix_quality.overall_score for r in type_quality) / len(type_quality)
+
         return BenchmarkSummary(
             total_cases=len(results),
             passed=passed,
@@ -453,6 +686,11 @@ Please fix this error."""
             avg_tokens=sum(r.tokens_used for r in results) / len(results),
             by_error_type=by_error_type,
             timestamp=datetime.now().isoformat(),
+            avg_quality_score=avg_quality,
+            avg_minimal_changes=avg_minimal,
+            avg_style_preserved=avg_style,
+            avg_no_extra_code=avg_no_extra,
+            quality_grade=grade,
         )
 
     def _save_results(self, results: list[TestResult], summary: BenchmarkSummary):
@@ -485,13 +723,23 @@ def print_summary(summary: BenchmarkSummary):
     print(f"Average Duration: {summary.avg_duration_ms:.0f}ms")
     print(f"Average Tokens: {summary.avg_tokens:.0f}")
 
+    # Quality metrics section
+    print("\n" + "-" * 60)
+    print("FIX QUALITY ASSESSMENT")
+    print("-" * 60)
+    print(f"Overall Quality Grade: {summary.quality_grade}")
+    print(f"Average Quality Score: {summary.avg_quality_score:.2f} / 1.00")
+    print(f"  - Minimal Changes:   {summary.avg_minimal_changes:.2f}")
+    print(f"  - Style Preserved:   {summary.avg_style_preserved:.2f}")
+    print(f"  - No Extra Code:     {summary.avg_no_extra_code:.2f}")
+
     print("\nBy Error Type:")
     print("-" * 60)
     for error_type, stats in summary.by_error_type.items():
         print(f"  {error_type}:")
         print(f"    Success Rate: {stats['success_rate']:.1f}% ({stats['passed']}/{stats['total']})")
         print(f"    Avg Duration: {stats['avg_duration_ms']:.0f}ms")
-        print(f"    Avg Tokens: {stats['avg_tokens']:.0f}")
+        print(f"    Avg Quality:  {stats.get('avg_quality', 0):.2f}")
     print("=" * 60)
 
 
@@ -515,8 +763,8 @@ def main():
     parser.add_argument(
         "--timeout",
         type=int,
-        default=120,
-        help="Timeout for each test case in seconds",
+        default=300,
+        help="Timeout for each test case in seconds (default: 300)",
     )
     parser.add_argument(
         "--parallel",
