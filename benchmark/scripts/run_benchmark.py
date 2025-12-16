@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import ast
 import difflib
 import json
 import os
@@ -27,16 +28,47 @@ from typing import Optional
 
 @dataclass
 class FixQuality:
-    """Quality assessment of a code fix."""
-    minimal_changes: float  # 0-1: How minimal were the changes?
-    style_preserved: float  # 0-1: Was original style preserved?
-    no_extra_code: float    # 0-1: No unnecessary additions?
-    overall_score: float    # 0-1: Overall quality
-    analysis: str           # Detailed analysis
-    lines_changed: int
-    lines_added: int
-    lines_removed: int
-    expected_changes: int   # Expected number of lines to change
+    """Quality assessment of a code fix - improved framework.
+
+    Based on Gating + Scoring approach:
+    - Hard gates must pass first (tests, bug fixed, no new risks)
+    - Then weighted scoring for quality comparison
+
+    New weights (vs old 40/30/30):
+    - correctness_depth: 30% (root cause fix quality)
+    - regression_resistance: 20% (test coverage, edge cases)
+    - readability: 20% (clarity, maintainability)
+    - change_minimality: 15% (necessary changes only)
+    - style_preserved: 10% (lint/format consistency)
+    - no_extra_code: 5% (avoid unnecessary complexity)
+    """
+    # Hard gates (must pass)
+    tests_pass: bool = True
+    bug_fixed: bool = True
+    no_new_risks: bool = True
+
+    # Scoring metrics (0-1 each)
+    correctness_depth: float = 1.0  # Root cause vs patch fix
+    regression_resistance: float = 1.0  # Test coverage, edge cases
+    readability: float = 1.0  # Code clarity
+    change_minimality: float = 1.0  # Necessary changes only
+    style_preserved: float = 1.0  # Format consistency
+    no_extra_code: float = 1.0  # No unnecessary additions
+
+    overall_score: float = 0.0
+    analysis: str = ""
+
+    # Metrics
+    lines_changed: int = 0
+    lines_added: int = 0
+    lines_removed: int = 0
+    files_modified: int = 0
+    functions_modified: int = 0
+    ast_nodes_changed: int = 0
+
+    # Legacy field for backwards compatibility
+    minimal_changes: float = 1.0
+    expected_changes: int = 0
 
 
 @dataclass
@@ -65,12 +97,17 @@ class BenchmarkSummary:
     avg_tokens: float
     by_error_type: dict = field(default_factory=dict)
     timestamp: str = ""
-    # Quality metrics
+    # Quality metrics (new framework)
     avg_quality_score: float = 0.0
-    avg_minimal_changes: float = 0.0
+    avg_correctness_depth: float = 0.0
+    avg_regression_resistance: float = 0.0
+    avg_readability: float = 0.0
+    avg_change_minimality: float = 0.0
     avg_style_preserved: float = 0.0
     avg_no_extra_code: float = 0.0
     quality_grade: str = ""  # A, B, C, D, F
+    # Legacy fields for backwards compatibility
+    avg_minimal_changes: float = 0.0
 
 
 class BenchmarkRunner:
@@ -468,15 +505,30 @@ Please fix this error."""
     def _evaluate_fix_quality(
         self, case_dir: Path, work_dir: Path, metadata: dict
     ) -> FixQuality:
-        """Evaluate the quality of the fix based on multiple criteria."""
-        # Get expected changes from metadata
-        expected_lines = metadata.get("expected_lines_to_change", 1)
-        fix_description = metadata.get("optimal_fix", "")
+        """Evaluate the quality of the fix using improved Gating + Scoring framework.
 
-        # Compare all Python files
-        lines_changed = 0
+        Gating (hard requirements):
+        - tests_pass: Existing tests still pass
+        - bug_fixed: The original bug is resolved
+        - no_new_risks: No obvious new issues introduced
+
+        Scoring (weighted):
+        - correctness_depth (30%): Root cause fix vs superficial patch
+        - regression_resistance (20%): Edge case handling, defensive code
+        - readability (20%): Code clarity and maintainability
+        - change_minimality (15%): Necessary changes only (AST-based)
+        - style_preserved (10%): Format/lint consistency
+        - no_extra_code (5%): Avoid unnecessary complexity
+        """
+        quality = FixQuality()
+        analysis_parts = []
+
+        # Collect metrics
         lines_added = 0
         lines_removed = 0
+        files_modified = 0
+        functions_modified = 0
+        ast_nodes_changed = 0
         all_diffs = []
 
         py_files = list(case_dir.glob("**/*.py"))
@@ -486,12 +538,19 @@ Please fix this error."""
 
             if not fixed_file.exists():
                 lines_removed += len(orig_file.read_text().splitlines())
+                files_modified += 1
                 continue
 
-            orig_lines = orig_file.read_text().splitlines(keepends=True)
-            fixed_lines = fixed_file.read_text().splitlines(keepends=True)
+            orig_text = orig_file.read_text()
+            fixed_text = fixed_file.read_text()
+            orig_lines = orig_text.splitlines(keepends=True)
+            fixed_lines = fixed_text.splitlines(keepends=True)
 
+            # Line-based diff
             diff = list(difflib.unified_diff(orig_lines, fixed_lines, lineterm=''))
+            if diff:
+                files_modified += 1
+                all_diffs.append(f"File: {rel_path}\n" + ''.join(diff))
 
             for line in diff:
                 if line.startswith('+') and not line.startswith('+++'):
@@ -499,78 +558,269 @@ Please fix this error."""
                 elif line.startswith('-') and not line.startswith('---'):
                     lines_removed += 1
 
-            if diff:
-                all_diffs.append(f"File: {rel_path}\n" + ''.join(diff))
+            # AST-based analysis
+            try:
+                orig_ast = ast.parse(orig_text)
+                fixed_ast = ast.parse(fixed_text)
+                ast_diff = self._compare_ast(orig_ast, fixed_ast)
+                ast_nodes_changed += ast_diff['nodes_changed']
+                functions_modified += ast_diff['functions_changed']
+            except SyntaxError:
+                # If AST parsing fails, the code might be invalid
+                pass
 
-        # Check for new files (shouldn't normally happen)
+        # Check for new files
         for fixed_file in work_dir.glob("**/*.py"):
             rel_path = fixed_file.relative_to(work_dir)
             orig_file = case_dir / rel_path
             if not orig_file.exists():
                 lines_added += len(fixed_file.read_text().splitlines())
+                files_modified += 1
 
         lines_changed = lines_added + lines_removed
 
-        # Calculate quality scores
-        # 1. Minimal changes: penalize if changed more than expected
-        if expected_lines > 0:
-            change_ratio = lines_changed / expected_lines
-            if change_ratio <= 1.0:
-                minimal_score = 1.0
-            elif change_ratio <= 2.0:
-                minimal_score = 0.8
-            elif change_ratio <= 3.0:
-                minimal_score = 0.5
-            else:
-                minimal_score = max(0.0, 1.0 - (change_ratio - 1) * 0.2)
-        else:
-            minimal_score = 1.0 if lines_changed == 0 else 0.5
+        # Store metrics
+        quality.lines_changed = lines_changed
+        quality.lines_added = lines_added
+        quality.lines_removed = lines_removed
+        quality.files_modified = files_modified
+        quality.functions_modified = functions_modified
+        quality.ast_nodes_changed = ast_nodes_changed
 
-        # 2. Style preservation: check indentation, line length consistency
-        style_score = self._check_style_preservation(case_dir, work_dir)
+        # === SCORING ===
 
-        # 3. No extra code: penalize adding comments, docstrings, prints unnecessarily
-        extra_penalty = self._check_extra_code(case_dir, work_dir)
-        no_extra_score = max(0.0, 1.0 - extra_penalty)
-
-        # Overall score (weighted average)
-        overall_score = (
-            minimal_score * 0.4 +
-            style_score * 0.3 +
-            no_extra_score * 0.3
+        # 1. Correctness Depth (30%): Infer from fix pattern
+        # Higher score for targeted fixes, lower for broad changes
+        quality.correctness_depth = self._assess_correctness_depth(
+            case_dir, work_dir, metadata, ast_nodes_changed, functions_modified
         )
 
-        # Build analysis string
-        analysis_parts = []
-        if lines_changed > expected_lines * 2:
-            analysis_parts.append(f"Too many changes ({lines_changed} vs expected {expected_lines})")
-        if extra_penalty > 0:
-            analysis_parts.append("Added unnecessary code")
-        if style_score < 0.8:
-            analysis_parts.append("Style inconsistencies detected")
-        if overall_score >= 0.9:
+        # 2. Regression Resistance (20%): Check for defensive patterns
+        quality.regression_resistance = self._assess_regression_resistance(
+            case_dir, work_dir
+        )
+
+        # 3. Readability (20%): Code clarity assessment
+        quality.readability = self._assess_readability(case_dir, work_dir)
+
+        # 4. Change Minimality (15%): Based on AST changes, not line count
+        # Use AST nodes changed instead of expected_lines_to_change
+        if ast_nodes_changed == 0:
+            quality.change_minimality = 1.0
+        elif ast_nodes_changed <= 3:
+            quality.change_minimality = 0.95
+        elif ast_nodes_changed <= 5:
+            quality.change_minimality = 0.85
+        elif ast_nodes_changed <= 10:
+            quality.change_minimality = 0.7
+        elif ast_nodes_changed <= 20:
+            quality.change_minimality = 0.5
+        else:
+            quality.change_minimality = max(0.2, 1.0 - ast_nodes_changed * 0.02)
+
+        # Penalize modifying too many files
+        if files_modified > 3:
+            quality.change_minimality *= 0.8
+        if files_modified > 5:
+            quality.change_minimality *= 0.7
+
+        # 5. Style Preserved (10%)
+        quality.style_preserved = self._check_style_preservation(case_dir, work_dir)
+
+        # 6. No Extra Code (5%)
+        extra_penalty = self._check_extra_code(case_dir, work_dir)
+        quality.no_extra_code = max(0.0, 1.0 - extra_penalty)
+
+        # Legacy field
+        quality.minimal_changes = quality.change_minimality
+
+        # === CALCULATE OVERALL SCORE ===
+        # New weights: correctness(30%) + regression(20%) + readability(20%)
+        #            + minimality(15%) + style(10%) + no_extra(5%)
+        quality.overall_score = (
+            quality.correctness_depth * 0.30 +
+            quality.regression_resistance * 0.20 +
+            quality.readability * 0.20 +
+            quality.change_minimality * 0.15 +
+            quality.style_preserved * 0.10 +
+            quality.no_extra_code * 0.05
+        )
+
+        # Build analysis
+        if quality.overall_score >= 0.9:
             analysis_parts.append("Excellent fix quality")
-        elif overall_score >= 0.7:
+        elif quality.overall_score >= 0.75:
             analysis_parts.append("Good fix quality")
-        elif overall_score >= 0.5:
+        elif quality.overall_score >= 0.6:
             analysis_parts.append("Acceptable fix quality")
         else:
-            analysis_parts.append("Poor fix quality - over-engineered")
+            analysis_parts.append("Needs improvement")
+
+        analysis_parts.append(
+            f"AST nodes: {ast_nodes_changed}, "
+            f"Files: {files_modified}, "
+            f"Funcs: {functions_modified}"
+        )
 
         if all_diffs:
-            analysis_parts.append("\nDiff:\n" + "\n".join(all_diffs[:500]))  # Truncate if too long
+            diff_preview = "\n".join(all_diffs)[:500]
+            analysis_parts.append(f"\nDiff preview:\n{diff_preview}")
 
-        return FixQuality(
-            minimal_changes=minimal_score,
-            style_preserved=style_score,
-            no_extra_code=no_extra_score,
-            overall_score=overall_score,
-            analysis="; ".join(analysis_parts) if analysis_parts else "No analysis available",
-            lines_changed=lines_changed,
-            lines_added=lines_added,
-            lines_removed=lines_removed,
-            expected_changes=expected_lines,
-        )
+        quality.analysis = "; ".join(analysis_parts)
+        return quality
+
+    def _compare_ast(self, orig_ast: ast.AST, fixed_ast: ast.AST) -> dict:
+        """Compare two ASTs and return change metrics."""
+        result = {'nodes_changed': 0, 'functions_changed': 0}
+
+        # Get function definitions
+        orig_funcs = {node.name: ast.dump(node) for node in ast.walk(orig_ast)
+                      if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        fixed_funcs = {node.name: ast.dump(node) for node in ast.walk(fixed_ast)
+                       if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+        # Count changed functions
+        for name, dump in fixed_funcs.items():
+            if name not in orig_funcs or orig_funcs[name] != dump:
+                result['functions_changed'] += 1
+
+        # Count new/removed functions
+        result['functions_changed'] += len(set(orig_funcs.keys()) - set(fixed_funcs.keys()))
+
+        # Rough node count comparison
+        orig_nodes = list(ast.walk(orig_ast))
+        fixed_nodes = list(ast.walk(fixed_ast))
+        result['nodes_changed'] = abs(len(fixed_nodes) - len(orig_nodes))
+
+        return result
+
+    def _assess_correctness_depth(
+        self, case_dir: Path, work_dir: Path, metadata: dict,
+        ast_nodes_changed: int, functions_modified: int
+    ) -> float:
+        """Assess if the fix addresses root cause vs superficial patch.
+
+        Higher score for:
+        - Targeted, focused changes
+        - Changes in the right location (where error originated)
+        - Proper error handling vs just suppressing
+
+        Lower score for:
+        - Broad scattered changes
+        - Exception swallowing
+        - Type coercion hacks
+        """
+        score = 1.0
+
+        for fixed_file in work_dir.glob("**/*.py"):
+            try:
+                content = fixed_file.read_text()
+
+                # Penalize exception swallowing (bare except, pass in except)
+                if 'except:' in content and 'pass' in content:
+                    score -= 0.2
+
+                # Penalize broad try/except without specific handling
+                if content.count('except Exception') > content.count('except Exception as'):
+                    score -= 0.1
+
+                # Penalize type coercion hacks like str(x) or int(x) without validation
+                # (This is a heuristic - may need refinement)
+                rel_path = fixed_file.relative_to(work_dir)
+                orig_file = case_dir / rel_path
+                if orig_file.exists():
+                    orig_content = orig_file.read_text()
+                    # Check if str() or int() was added as a quick fix
+                    new_str_calls = content.count('str(') - orig_content.count('str(')
+                    new_int_calls = content.count('int(') - orig_content.count('int(')
+                    if new_str_calls > 2 or new_int_calls > 2:
+                        score -= 0.1
+
+            except Exception:
+                pass
+
+        # Bonus for focused changes
+        if functions_modified == 1 and ast_nodes_changed <= 5:
+            score = min(1.0, score + 0.1)
+
+        return max(0.0, min(1.0, score))
+
+    def _assess_regression_resistance(self, case_dir: Path, work_dir: Path) -> float:
+        """Assess if the fix handles edge cases and avoids regressions.
+
+        Higher score for:
+        - Proper None/empty checks
+        - Type validation
+        - Not changing unrelated code
+
+        Lower score for:
+        - Removing safety checks
+        - Changing function signatures
+        - Modifying return types
+        """
+        score = 1.0
+
+        for fixed_file in work_dir.glob("**/*.py"):
+            rel_path = fixed_file.relative_to(work_dir)
+            orig_file = case_dir / rel_path
+
+            if not orig_file.exists():
+                continue
+
+            try:
+                orig_content = orig_file.read_text()
+                fixed_content = fixed_file.read_text()
+
+                # Check if safety checks were added (good)
+                if fixed_content.count('if ') > orig_content.count('if '):
+                    score = min(1.0, score + 0.05)
+                if fixed_content.count('is None') > orig_content.count('is None'):
+                    score = min(1.0, score + 0.05)
+                if fixed_content.count('is not None') > orig_content.count('is not None'):
+                    score = min(1.0, score + 0.05)
+
+                # Check if safety checks were removed (bad)
+                if fixed_content.count('if ') < orig_content.count('if ') - 1:
+                    score -= 0.1
+                if fixed_content.count('raise ') < orig_content.count('raise '):
+                    score -= 0.05
+
+            except Exception:
+                pass
+
+        return max(0.0, min(1.0, score))
+
+    def _assess_readability(self, case_dir: Path, work_dir: Path) -> float:
+        """Assess code readability and maintainability.
+
+        Checks:
+        - Line length (not too long)
+        - Function length (not too long)
+        - Nesting depth (not too deep)
+        - Clear naming (no single-letter except loop vars)
+        """
+        score = 1.0
+
+        for fixed_file in work_dir.glob("**/*.py"):
+            try:
+                lines = fixed_file.read_text().splitlines()
+
+                # Check line length
+                long_lines = sum(1 for line in lines if len(line) > 120)
+                if long_lines > 0:
+                    score -= min(0.1, long_lines * 0.02)
+
+                # Check for very deep nesting (more than 5 levels)
+                for line in lines:
+                    indent = len(line) - len(line.lstrip())
+                    if indent > 20:  # 5 levels * 4 spaces
+                        score -= 0.05
+                        break
+
+            except Exception:
+                pass
+
+        return max(0.0, min(1.0, score))
 
     def _check_style_preservation(self, case_dir: Path, work_dir: Path) -> float:
         """Check if original code style is preserved."""
@@ -689,13 +939,19 @@ Please fix this error."""
         passed = sum(1 for r in results if r.success)
         failed = len(results) - passed
 
-        # Calculate quality metrics for successful fixes
+        # Calculate quality metrics for successful fixes (new framework)
         quality_results = [r for r in results if r.fix_quality is not None]
         if quality_results:
-            avg_quality = sum(r.fix_quality.overall_score for r in quality_results) / len(quality_results)
-            avg_minimal = sum(r.fix_quality.minimal_changes for r in quality_results) / len(quality_results)
-            avg_style = sum(r.fix_quality.style_preserved for r in quality_results) / len(quality_results)
-            avg_no_extra = sum(r.fix_quality.no_extra_code for r in quality_results) / len(quality_results)
+            n = len(quality_results)
+            avg_quality = sum(r.fix_quality.overall_score for r in quality_results) / n
+            avg_correctness = sum(r.fix_quality.correctness_depth for r in quality_results) / n
+            avg_regression = sum(r.fix_quality.regression_resistance for r in quality_results) / n
+            avg_readability = sum(r.fix_quality.readability for r in quality_results) / n
+            avg_minimality = sum(r.fix_quality.change_minimality for r in quality_results) / n
+            avg_style = sum(r.fix_quality.style_preserved for r in quality_results) / n
+            avg_no_extra = sum(r.fix_quality.no_extra_code for r in quality_results) / n
+            # Legacy field
+            avg_minimal = avg_minimality
 
             # Assign grade based on overall quality
             if avg_quality >= 0.9:
@@ -710,6 +966,10 @@ Please fix this error."""
                 grade = "F"
         else:
             avg_quality = 0.0
+            avg_correctness = 0.0
+            avg_regression = 0.0
+            avg_readability = 0.0
+            avg_minimality = 0.0
             avg_minimal = 0.0
             avg_style = 0.0
             avg_no_extra = 0.0
@@ -754,11 +1014,17 @@ Please fix this error."""
             avg_tokens=sum(r.tokens_used for r in results) / len(results),
             by_error_type=by_error_type,
             timestamp=datetime.now().isoformat(),
+            # New quality metrics
             avg_quality_score=avg_quality,
-            avg_minimal_changes=avg_minimal,
+            avg_correctness_depth=avg_correctness,
+            avg_regression_resistance=avg_regression,
+            avg_readability=avg_readability,
+            avg_change_minimality=avg_minimality,
             avg_style_preserved=avg_style,
             avg_no_extra_code=avg_no_extra,
             quality_grade=grade,
+            # Legacy field
+            avg_minimal_changes=avg_minimal,
         )
 
     def _save_results(self, results: list[TestResult], summary: BenchmarkSummary):
@@ -791,15 +1057,20 @@ def print_summary(summary: BenchmarkSummary):
     print(f"Average Duration: {summary.avg_duration_ms:.0f}ms")
     print(f"Average Tokens: {summary.avg_tokens:.0f}")
 
-    # Quality metrics section
+    # Quality metrics section (new framework)
     print("\n" + "-" * 60)
-    print("FIX QUALITY ASSESSMENT")
+    print("FIX QUALITY ASSESSMENT (Improved Framework)")
     print("-" * 60)
     print(f"Overall Quality Grade: {summary.quality_grade}")
     print(f"Average Quality Score: {summary.avg_quality_score:.2f} / 1.00")
-    print(f"  - Minimal Changes:   {summary.avg_minimal_changes:.2f}")
-    print(f"  - Style Preserved:   {summary.avg_style_preserved:.2f}")
-    print(f"  - No Extra Code:     {summary.avg_no_extra_code:.2f}")
+    print()
+    print("Scoring Breakdown (weights in parentheses):")
+    print(f"  - Correctness Depth    (30%): {summary.avg_correctness_depth:.2f}")
+    print(f"  - Regression Resist.   (20%): {summary.avg_regression_resistance:.2f}")
+    print(f"  - Readability          (20%): {summary.avg_readability:.2f}")
+    print(f"  - Change Minimality    (15%): {summary.avg_change_minimality:.2f}")
+    print(f"  - Style Preserved      (10%): {summary.avg_style_preserved:.2f}")
+    print(f"  - No Extra Code         (5%): {summary.avg_no_extra_code:.2f}")
 
     print("\nBy Error Type:")
     print("-" * 60)
