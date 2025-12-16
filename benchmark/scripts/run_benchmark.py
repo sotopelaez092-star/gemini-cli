@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
-Gemini CLI Cross-File Python Debug Benchmark Runner
+AI CLI Cross-File Python Debug Benchmark Runner
+
+Supports: Gemini CLI, Aider
 
 Usage:
     python run_benchmark.py [--error-type NAME_ERROR] [--parallel 4] [--timeout 120]
+    python run_benchmark.py --cli aider --model openai/gemini-2.0-flash
 """
 
 import argparse
@@ -48,19 +51,23 @@ class BenchmarkSummary:
 
 
 class BenchmarkRunner:
-    """Run benchmarks against Gemini CLI for Python error fixing."""
+    """Run benchmarks against AI CLI tools for Python error fixing."""
 
     def __init__(
         self,
         test_cases_dir: str,
         results_dir: str,
+        cli_tool: str = "gemini",  # "gemini" or "aider"
         gemini_cmd: str = "gemini",
+        aider_model: str = "openai/gemini-2.0-flash",
         timeout: int = 120,
         parallel: int = 1,
     ):
         self.test_cases_dir = Path(test_cases_dir)
         self.results_dir = Path(results_dir)
+        self.cli_tool = cli_tool
         self.gemini_cmd = gemini_cmd
+        self.aider_model = aider_model
         self.timeout = timeout
         self.parallel = parallel
         self.results_dir.mkdir(parents=True, exist_ok=True)
@@ -102,9 +109,12 @@ class BenchmarkRunner:
         # Build the prompt for Gemini
         prompt = self._build_fix_prompt(work_dir, error_file, error_output, metadata)
 
-        # Run Gemini CLI
+        # Run AI CLI tool
         start_time = time.time()
-        result = self._run_gemini(work_dir, prompt)
+        if self.cli_tool == "aider":
+            result = self._run_aider(work_dir, prompt, error_file)
+        else:
+            result = self._run_gemini(work_dir, prompt)
         duration_ms = (time.time() - start_time) * 1000
 
         # Parse result
@@ -247,6 +257,74 @@ Please fix this error."""
                 "error": {
                     "type": "Timeout",
                     "message": f"Gemini CLI timed out after {self.timeout}s",
+                }
+            }
+        except Exception as e:
+            return {
+                "error": {
+                    "type": "Exception",
+                    "message": str(e),
+                }
+            }
+
+    def _run_aider(self, work_dir: Path, prompt: str, error_file: str) -> dict:
+        """Run Aider CLI and return the result."""
+        # Get all Python files in the work directory
+        py_files = list(work_dir.glob("**/*.py"))
+        file_args = [str(f.relative_to(work_dir)) for f in py_files]
+
+        cmd = [
+            "aider",
+            "--model", self.aider_model,
+            "--message", prompt,
+            "--yes",  # Auto-confirm changes
+            "--no-git",  # Don't use git
+            "--no-auto-commits",  # Don't auto commit
+            "--no-suggest-shell-commands",  # Don't suggest shell commands
+        ] + file_args
+
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+            )
+
+            if os.environ.get("DEBUG"):
+                print(f"    [DEBUG] aider returncode: {result.returncode}")
+                print(f"    [DEBUG] stdout length: {len(result.stdout)}")
+                print(f"    [DEBUG] stderr: {result.stderr[:500] if result.stderr else 'empty'}")
+
+            # Aider outputs to stdout
+            if result.returncode == 0:
+                return {
+                    "response": result.stdout,
+                    "error": None,
+                }
+
+            # Check for errors
+            error_msg = result.stderr or result.stdout or f"Exit code: {result.returncode}"
+            return {
+                "error": {
+                    "type": "AiderError",
+                    "message": error_msg[:500],
+                }
+            }
+
+        except subprocess.TimeoutExpired:
+            return {
+                "error": {
+                    "type": "Timeout",
+                    "message": f"Aider timed out after {self.timeout}s",
+                }
+            }
+        except FileNotFoundError:
+            return {
+                "error": {
+                    "type": "NotFound",
+                    "message": "Aider not found. Install with: pip install aider-chat",
                 }
             }
         except Exception as e:
@@ -417,7 +495,7 @@ def print_summary(summary: BenchmarkSummary):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run Gemini CLI benchmark for Python error fixing")
+    parser = argparse.ArgumentParser(description="Run AI CLI benchmark for Python error fixing")
     parser.add_argument(
         "--test-cases-dir",
         default="./test_cases",
@@ -450,13 +528,30 @@ def main():
         default="gemini",
         help="Path to gemini CLI command",
     )
+    parser.add_argument(
+        "--cli",
+        choices=["gemini", "aider"],
+        default="gemini",
+        help="Which CLI tool to use (gemini or aider)",
+    )
+    parser.add_argument(
+        "--model",
+        default="openai/gemini-2.0-flash",
+        help="Model to use for aider (e.g., openai/gemini-2.0-flash, gpt-4)",
+    )
 
     args = parser.parse_args()
+
+    print(f"Using CLI tool: {args.cli}")
+    if args.cli == "aider":
+        print(f"Using model: {args.model}")
 
     runner = BenchmarkRunner(
         test_cases_dir=args.test_cases_dir,
         results_dir=args.results_dir,
+        cli_tool=args.cli,
         gemini_cmd=args.gemini_cmd,
+        aider_model=args.model,
         timeout=args.timeout,
         parallel=args.parallel,
     )
