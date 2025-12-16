@@ -183,8 +183,7 @@ Please fix this error."""
             self.gemini_cmd,
             "--prompt", prompt,
             "--output-format", "json",
-            "--yolo",  # Auto-approve all actions
-            "--approval-mode", "auto_edit",
+            "--approval-mode", "yolo",  # Auto-approve all actions
         ]
 
         try:
