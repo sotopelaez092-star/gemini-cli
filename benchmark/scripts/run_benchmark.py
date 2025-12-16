@@ -812,15 +812,18 @@ def print_summary(summary: BenchmarkSummary):
 
 
 def main():
+    # Get the script's directory for relative paths
+    script_dir = Path(__file__).parent.parent  # benchmark/ directory
+
     parser = argparse.ArgumentParser(description="Run AI CLI benchmark for Python error fixing")
     parser.add_argument(
         "--test-cases-dir",
-        default="./test_cases",
+        default=str(script_dir / "test_cases"),
         help="Directory containing test cases",
     )
     parser.add_argument(
         "--results-dir",
-        default="./results",
+        default=str(script_dir / "results"),
         help="Directory to save results",
     )
     parser.add_argument(
