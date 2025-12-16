@@ -223,12 +223,17 @@ class BenchmarkRunner:
     def _capture_python_error(self, work_dir: Path, error_file: str) -> str:
         """Run the Python file and capture the error."""
         try:
+            # Set up environment with proper PYTHONPATH for cross-file imports
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(work_dir)
+
             result = subprocess.run(
                 [sys.executable, error_file],
                 cwd=work_dir,
                 capture_output=True,
                 text=True,
                 timeout=10,
+                env=env,
             )
             return result.stderr or result.stdout
         except subprocess.TimeoutExpired:
@@ -519,21 +524,74 @@ Please fix this error."""
                 print(f"    [DEBUG] Using direct import from {pyfix_path}")
                 print(f"    [DEBUG] main_file: {main_file}")
 
-            agent = DebugAgent(project_path=str(work_dir))
-            result = asyncio.run(
-                agent.debug_file(str(main_file), max_iterations=5, auto_save=True)
-            )
+            # Proper async lifecycle management to avoid "Event loop is closed" errors
+            async def run_with_cleanup():
+                agent = DebugAgent(project_path=str(work_dir))
+                try:
+                    result = await agent.debug_file(
+                        str(main_file), max_iterations=5, auto_save=True
+                    )
+                    return result
+                finally:
+                    # Give pending tasks a chance to cleanup
+                    await asyncio.sleep(0.1)
+                    # Cancel any remaining tasks
+                    tasks = [t for t in asyncio.all_tasks()
+                             if t is not asyncio.current_task()]
+                    for task in tasks:
+                        task.cancel()
+                    if tasks:
+                        await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Use get_event_loop for better compatibility
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_closed():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+            try:
+                result = loop.run_until_complete(run_with_cleanup())
+            finally:
+                # Proper cleanup
+                try:
+                    loop.run_until_complete(loop.shutdown_asyncgens())
+                except Exception:
+                    pass
+
+            # Extract token usage from result if available
+            tokens_used = result.get("tokens_used", 0)
+            if not tokens_used and "stats" in result:
+                tokens_used = result["stats"].get("total_tokens", 0)
 
             if result.get("success"):
                 return {
                     "response": result.get("message", "Fix applied"),
                     "error": None,
+                    "stats": {
+                        "models": {
+                            "pyfix": {
+                                "tokens": {"total": tokens_used}
+                            }
+                        },
+                        "tools": {"totalCalls": result.get("iterations", 1)}
+                    }
                 }
 
             return {
                 "error": {
                     "type": "FixFailed",
                     "message": result.get("message", "Unknown error"),
+                },
+                "stats": {
+                    "models": {
+                        "pyfix": {
+                            "tokens": {"total": tokens_used}
+                        }
+                    }
                 }
             }
 
@@ -625,12 +683,17 @@ Please fix this error."""
     def _verify_fix(self, work_dir: Path, error_file: str) -> bool:
         """Verify the fix by running the code again."""
         try:
+            # Set up environment with proper PYTHONPATH for cross-file imports
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(work_dir)
+
             result = subprocess.run(
                 [sys.executable, error_file],
                 cwd=work_dir,
                 capture_output=True,
                 text=True,
                 timeout=10,
+                env=env,
             )
             # Success if no error in stderr and exit code is 0
             return result.returncode == 0 and not any(
