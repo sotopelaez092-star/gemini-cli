@@ -16,6 +16,7 @@ import difflib
 import json
 import os
 import shutil
+import statistics
 import subprocess
 import sys
 import time
@@ -28,16 +29,16 @@ from typing import Optional
 
 @dataclass
 class FixQuality:
-    """Quality assessment of a code fix - improved framework.
+    """Quality assessment of a code fix - Gating + Scoring framework.
 
-    Based on Gating + Scoring approach:
-    - Hard gates must pass first (tests, bug fixed, no new risks)
-    - Then weighted scoring for quality comparison
+    Hard Gates (must pass or score = 0.0):
+    - success: The AI tool ran without errors
+    - verification_passed: The fix actually resolves the bug
 
-    New weights (vs old 40/30/30):
-    - correctness_depth: 30% (root cause fix quality)
+    Scoring weights (only applied if gates pass):
+    - correctness_depth: 35% (root cause fix quality)
     - regression_resistance: 20% (test coverage, edge cases)
-    - readability: 20% (clarity, maintainability)
+    - readability: 15% (clarity, maintainability)
     - change_minimality: 15% (necessary changes only)
     - style_preserved: 10% (lint/format consistency)
     - no_extra_code: 5% (avoid unnecessary complexity)
@@ -97,16 +98,25 @@ class BenchmarkSummary:
     avg_tokens: float
     by_error_type: dict = field(default_factory=dict)
     timestamp: str = ""
-    # Quality metrics (new framework)
-    avg_quality_score: float = 0.0
+    # Quality metrics (Gating + Scoring framework)
+    # Primary metrics (includes all cases, failed = 0.0 score)
+    avg_quality_all: float = 0.0  # Main metric - includes failed cases as 0
+    avg_quality_success_only: float = 0.0  # Only successful cases
+    # Statistics
+    std_quality_all: float = 0.0
+    min_quality: float = 0.0
+    max_quality: float = 0.0
+    median_quality_all: float = 0.0
+    # Per-metric averages (success-only for detailed breakdown)
     avg_correctness_depth: float = 0.0
     avg_regression_resistance: float = 0.0
     avg_readability: float = 0.0
     avg_change_minimality: float = 0.0
     avg_style_preserved: float = 0.0
     avg_no_extra_code: float = 0.0
-    quality_grade: str = ""  # A, B, C, D, F
+    quality_grade: str = ""  # A, B, C, D, F (based on avg_quality_all)
     # Legacy fields for backwards compatibility
+    avg_quality_score: float = 0.0  # Alias for avg_quality_all
     avg_minimal_changes: float = 0.0
 
 
@@ -635,16 +645,18 @@ Please fix this error."""
         quality.minimal_changes = quality.change_minimality
 
         # === CALCULATE OVERALL SCORE ===
-        # New weights: correctness(30%) + regression(20%) + readability(20%)
-        #            + minimality(15%) + style(10%) + no_extra(5%)
+        # Weights: correctness(35%) + regression(20%) + readability(15%)
+        #        + minimality(15%) + style(10%) + no_extra(5%)
         quality.overall_score = (
-            quality.correctness_depth * 0.30 +
+            quality.correctness_depth * 0.35 +
             quality.regression_resistance * 0.20 +
-            quality.readability * 0.20 +
+            quality.readability * 0.15 +
             quality.change_minimality * 0.15 +
             quality.style_preserved * 0.10 +
             quality.no_extra_code * 0.05
         )
+        # Clip to [0, 1] range
+        quality.overall_score = max(0.0, min(1.0, quality.overall_score))
 
         # Build analysis
         if quality.overall_score >= 0.9:
@@ -924,7 +936,11 @@ Please fix this error."""
         return summary
 
     def _build_summary(self, results: list[TestResult]) -> BenchmarkSummary:
-        """Build summary from results."""
+        """Build summary from results with Gating + Scoring framework.
+
+        Key principle: Failed cases get score = 0.0 (hard gate).
+        This ensures avg_quality_all properly reflects both success rate AND fix quality.
+        """
         if not results:
             return BenchmarkSummary(
                 total_cases=0,
@@ -939,41 +955,61 @@ Please fix this error."""
         passed = sum(1 for r in results if r.success)
         failed = len(results) - passed
 
-        # Calculate quality metrics for successful fixes (new framework)
+        # === COMPUTE SCORES FOR ALL CASES ===
+        # Hard gate: failed cases get 0.0, successful cases get their quality score
+        all_scores = []
+        for r in results:
+            if not r.success:
+                # Hard gate 1: Case failed entirely
+                all_scores.append(0.0)
+            elif not r.verification_passed:
+                # Hard gate 2: Fix didn't actually work
+                all_scores.append(0.0)
+            elif r.fix_quality is not None:
+                # Gates passed, use computed quality score
+                all_scores.append(r.fix_quality.overall_score)
+            else:
+                # Shouldn't happen, but default to 0
+                all_scores.append(0.0)
+
+        # Calculate statistics for ALL cases (includes failed as 0)
+        avg_quality_all = sum(all_scores) / len(all_scores)
+        min_quality = min(all_scores)
+        max_quality = max(all_scores)
+        median_quality_all = statistics.median(all_scores)
+        std_quality_all = statistics.stdev(all_scores) if len(all_scores) > 1 else 0.0
+
+        # Calculate quality metrics for successful fixes only (for detailed breakdown)
         quality_results = [r for r in results if r.fix_quality is not None]
         if quality_results:
             n = len(quality_results)
-            avg_quality = sum(r.fix_quality.overall_score for r in quality_results) / n
+            avg_quality_success = sum(r.fix_quality.overall_score for r in quality_results) / n
             avg_correctness = sum(r.fix_quality.correctness_depth for r in quality_results) / n
             avg_regression = sum(r.fix_quality.regression_resistance for r in quality_results) / n
             avg_readability = sum(r.fix_quality.readability for r in quality_results) / n
             avg_minimality = sum(r.fix_quality.change_minimality for r in quality_results) / n
             avg_style = sum(r.fix_quality.style_preserved for r in quality_results) / n
             avg_no_extra = sum(r.fix_quality.no_extra_code for r in quality_results) / n
-            # Legacy field
-            avg_minimal = avg_minimality
-
-            # Assign grade based on overall quality
-            if avg_quality >= 0.9:
-                grade = "A"
-            elif avg_quality >= 0.8:
-                grade = "B"
-            elif avg_quality >= 0.7:
-                grade = "C"
-            elif avg_quality >= 0.6:
-                grade = "D"
-            else:
-                grade = "F"
         else:
-            avg_quality = 0.0
+            avg_quality_success = 0.0
             avg_correctness = 0.0
             avg_regression = 0.0
             avg_readability = 0.0
             avg_minimality = 0.0
-            avg_minimal = 0.0
             avg_style = 0.0
             avg_no_extra = 0.0
-            grade = "N/A"
+
+        # Assign grade based on avg_quality_all (the main metric)
+        if avg_quality_all >= 0.9:
+            grade = "A"
+        elif avg_quality_all >= 0.8:
+            grade = "B"
+        elif avg_quality_all >= 0.7:
+            grade = "C"
+        elif avg_quality_all >= 0.6:
+            grade = "D"
+        else:
+            grade = "F"
 
         # Group by error type
         by_error_type = {}
@@ -985,7 +1021,8 @@ Please fix this error."""
                     "failed": 0,
                     "avg_duration_ms": 0.0,
                     "avg_tokens": 0.0,
-                    "avg_quality": 0.0,
+                    "avg_quality_all": 0.0,
+                    "avg_quality_success_only": 0.0,
                 }
             by_error_type[r.error_type]["total"] += 1
             if r.success:
@@ -1000,10 +1037,25 @@ Please fix this error."""
             stats["avg_tokens"] = sum(r.tokens_used for r in type_results) / len(type_results)
             stats["success_rate"] = stats["passed"] / stats["total"] * 100
 
-            # Quality for this error type
+            # Quality for this error type (all cases, failed = 0)
+            type_scores = []
+            for r in type_results:
+                if not r.success or not r.verification_passed:
+                    type_scores.append(0.0)
+                elif r.fix_quality is not None:
+                    type_scores.append(r.fix_quality.overall_score)
+                else:
+                    type_scores.append(0.0)
+            stats["avg_quality_all"] = sum(type_scores) / len(type_scores)
+
+            # Quality for successful cases only
             type_quality = [r for r in type_results if r.fix_quality is not None]
             if type_quality:
-                stats["avg_quality"] = sum(r.fix_quality.overall_score for r in type_quality) / len(type_quality)
+                stats["avg_quality_success_only"] = sum(
+                    r.fix_quality.overall_score for r in type_quality
+                ) / len(type_quality)
+            # Legacy field alias
+            stats["avg_quality"] = stats["avg_quality_all"]
 
         return BenchmarkSummary(
             total_cases=len(results),
@@ -1014,8 +1066,15 @@ Please fix this error."""
             avg_tokens=sum(r.tokens_used for r in results) / len(results),
             by_error_type=by_error_type,
             timestamp=datetime.now().isoformat(),
-            # New quality metrics
-            avg_quality_score=avg_quality,
+            # Primary quality metrics (Gating + Scoring)
+            avg_quality_all=avg_quality_all,
+            avg_quality_success_only=avg_quality_success,
+            # Statistics
+            std_quality_all=std_quality_all,
+            min_quality=min_quality,
+            max_quality=max_quality,
+            median_quality_all=median_quality_all,
+            # Per-metric averages (success-only)
             avg_correctness_depth=avg_correctness,
             avg_regression_resistance=avg_regression,
             avg_readability=avg_readability,
@@ -1023,8 +1082,9 @@ Please fix this error."""
             avg_style_preserved=avg_style,
             avg_no_extra_code=avg_no_extra,
             quality_grade=grade,
-            # Legacy field
-            avg_minimal_changes=avg_minimal,
+            # Legacy fields
+            avg_quality_score=avg_quality_all,
+            avg_minimal_changes=avg_minimality,
         )
 
     def _save_results(self, results: list[TestResult], summary: BenchmarkSummary):
@@ -1057,17 +1117,24 @@ def print_summary(summary: BenchmarkSummary):
     print(f"Average Duration: {summary.avg_duration_ms:.0f}ms")
     print(f"Average Tokens: {summary.avg_tokens:.0f}")
 
-    # Quality metrics section (new framework)
+    # Quality metrics section (Gating + Scoring framework)
     print("\n" + "-" * 60)
-    print("FIX QUALITY ASSESSMENT (Improved Framework)")
+    print("FIX QUALITY ASSESSMENT (Gating + Scoring)")
     print("-" * 60)
     print(f"Overall Quality Grade: {summary.quality_grade}")
-    print(f"Average Quality Score: {summary.avg_quality_score:.2f} / 1.00")
     print()
-    print("Scoring Breakdown (weights in parentheses):")
-    print(f"  - Correctness Depth    (30%): {summary.avg_correctness_depth:.2f}")
+    print("Quality Scores:")
+    print(f"  avg_quality_all:         {summary.avg_quality_all:.2f} / 1.00  (includes failed=0)")
+    print(f"  avg_quality_success_only: {summary.avg_quality_success_only:.2f} / 1.00  (passed cases)")
+    print()
+    print("Statistics (all cases):")
+    print(f"  min: {summary.min_quality:.2f}  max: {summary.max_quality:.2f}  "
+          f"median: {summary.median_quality_all:.2f}  std: {summary.std_quality_all:.2f}")
+    print()
+    print("Scoring Breakdown (success-only, weights in parentheses):")
+    print(f"  - Correctness Depth    (35%): {summary.avg_correctness_depth:.2f}")
     print(f"  - Regression Resist.   (20%): {summary.avg_regression_resistance:.2f}")
-    print(f"  - Readability          (20%): {summary.avg_readability:.2f}")
+    print(f"  - Readability          (15%): {summary.avg_readability:.2f}")
     print(f"  - Change Minimality    (15%): {summary.avg_change_minimality:.2f}")
     print(f"  - Style Preserved      (10%): {summary.avg_style_preserved:.2f}")
     print(f"  - No Extra Code         (5%): {summary.avg_no_extra_code:.2f}")
@@ -1078,7 +1145,8 @@ def print_summary(summary: BenchmarkSummary):
         print(f"  {error_type}:")
         print(f"    Success Rate: {stats['success_rate']:.1f}% ({stats['passed']}/{stats['total']})")
         print(f"    Avg Duration: {stats['avg_duration_ms']:.0f}ms")
-        print(f"    Avg Quality:  {stats.get('avg_quality', 0):.2f}")
+        print(f"    Quality (all): {stats.get('avg_quality_all', 0):.2f}  "
+              f"(success-only): {stats.get('avg_quality_success_only', 0):.2f}")
     print("=" * 60)
 
 
