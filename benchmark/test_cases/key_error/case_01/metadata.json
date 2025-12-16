@@ -1,0 +1,9 @@
+{
+  "error_type": "KeyError",
+  "case_id": "key_error_01",
+  "description": "Wrong dictionary key name",
+  "error_file": "main.py",
+  "error_message": "KeyError: 'hostname'",
+  "expected_fix": "hostname -> host",
+  "difficulty": "easy"
+}

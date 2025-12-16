@@ -1,0 +1,9 @@
+{
+  "error_type": "TypeError",
+  "case_id": "type_error_01",
+  "description": "Wrong number of function arguments",
+  "error_file": "main.py",
+  "error_message": "add() takes 3 positional arguments but 4 were given",
+  "expected_fix": "Use add_many() or change to add(1, 2) + calc.add(result, 3)",
+  "difficulty": "medium"
+}

@@ -1,0 +1,9 @@
+{
+  "error_type": "NameError",
+  "case_id": "name_error_02",
+  "description": "Typo in constant name from another module",
+  "error_file": "main.py",
+  "error_message": "NameError: name 'DEFUALT_MULTIPLIER' is not defined",
+  "expected_fix": "Import DEFAULT_MULTIPLIER from data_processor or fix typo",
+  "difficulty": "medium"
+}
