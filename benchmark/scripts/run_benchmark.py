@@ -670,6 +670,8 @@ Please fix this error."""
     def _run_debugagent_import(self, work_dir: Path, main_file: Path, pyfix_path: str) -> dict:
         """Run debug agent via direct Python import."""
         import asyncio
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
 
         try:
             # Add debug agent path to sys.path
@@ -678,7 +680,8 @@ Please fix this error."""
 
             from src.agent.debug_agent_new import DebugAgent
 
-            if os.environ.get("DEBUG"):
+            verbose = os.environ.get("DEBUG") or os.environ.get("VERBOSE")
+            if verbose:
                 print(f"    [DEBUG] Using direct import from {pyfix_path}")
                 print(f"    [DEBUG] main_file: {main_file}")
 
@@ -711,8 +714,15 @@ Please fix this error."""
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
 
+            # Suppress agent output unless verbose mode
+            captured_output = io.StringIO()
             try:
-                result = loop.run_until_complete(run_with_cleanup())
+                if verbose:
+                    result = loop.run_until_complete(run_with_cleanup())
+                else:
+                    # Redirect stdout/stderr to suppress agent's verbose output
+                    with redirect_stdout(captured_output), redirect_stderr(captured_output):
+                        result = loop.run_until_complete(run_with_cleanup())
             finally:
                 # Proper cleanup
                 try:
