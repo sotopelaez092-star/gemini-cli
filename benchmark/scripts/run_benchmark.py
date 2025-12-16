@@ -175,8 +175,6 @@ class BenchmarkRunner:
         error_type = metadata["error_type"]
         error_file = metadata.get("error_file", "main.py")
 
-        print(f"  Running: {case_id} ({error_type})")
-
         # Create a temporary working copy
         work_dir = self.results_dir / "workspaces" / case_id
         if work_dir.exists():
@@ -1253,30 +1251,104 @@ Please fix this error."""
         return min(1.0, penalty)
 
     def run_all(self, error_type: Optional[str] = None) -> BenchmarkSummary:
-        """Run all test cases and return summary."""
+        """Run all test cases and return summary with real-time progress."""
         cases = self.discover_test_cases(error_type)
-        print(f"Discovered {len(cases)} test cases")
+        total = len(cases)
+        print(f"\n{'='*60}")
+        print(f"  BENCHMARK: {total} test cases | Parallel: {self.parallel} | Timeout: {self.timeout}s")
+        print(f"{'='*60}\n")
 
         results: list[TestResult] = []
+        completed = 0
+        passed = 0
+        failed = 0
+        start_time = time.time()
+
+        # Progress display helper
+        def show_progress(case_id: str, status: str, duration_ms: float = 0):
+            nonlocal completed, passed, failed
+            elapsed = time.time() - start_time
+            avg_time = elapsed / max(completed, 1)
+            eta = avg_time * (total - completed)
+
+            # Status emoji
+            if status == "running":
+                emoji = "🔄"
+            elif status == "passed":
+                emoji = "✅"
+                passed += 1
+            elif status == "failed":
+                emoji = "❌"
+                failed += 1
+            else:
+                emoji = "⏳"
+
+            # Progress bar
+            bar_width = 30
+            filled = int(bar_width * completed / total)
+            bar = "█" * filled + "░" * (bar_width - filled)
+
+            # Clear line and print progress
+            print(f"\r[{bar}] {completed}/{total} | ✅{passed} ❌{failed} | "
+                  f"ETA: {eta:.0f}s | {emoji} {case_id[:30]:<30}", end="", flush=True)
+
+            if status in ("passed", "failed"):
+                # Print result on new line
+                duration_str = f"{duration_ms/1000:.1f}s" if duration_ms else ""
+                print(f"\n  {emoji} {case_id} {duration_str}")
 
         if self.parallel > 1:
+            # Parallel execution with progress tracking
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            import threading
+
+            lock = threading.Lock()
+
+            def run_with_progress(case):
+                nonlocal completed
+                case_id = case.name
+                try:
+                    result = self.run_single_test(case)
+                    with lock:
+                        completed += 1
+                        status = "passed" if result.success else "failed"
+                        show_progress(case_id, status, result.duration_ms)
+                    return result
+                except Exception as e:
+                    with lock:
+                        completed += 1
+                        show_progress(case_id, "failed", 0)
+                    raise e
+
             with ThreadPoolExecutor(max_workers=self.parallel) as executor:
-                futures = {
-                    executor.submit(self.run_single_test, case): case
-                    for case in cases
-                }
+                futures = {executor.submit(run_with_progress, case): case for case in cases}
                 for future in as_completed(futures):
                     try:
                         results.append(future.result())
                     except Exception as e:
                         case = futures[future]
-                        print(f"  Error running {case.name}: {e}")
+                        print(f"\n  ⚠️  Error: {case.name}: {e}")
         else:
-            for case in cases:
+            # Sequential execution with progress
+            for i, case in enumerate(cases):
+                case_id = case.name
+                show_progress(case_id, "running")
                 try:
-                    results.append(self.run_single_test(case))
+                    result = self.run_single_test(case)
+                    completed += 1
+                    status = "passed" if result.success else "failed"
+                    show_progress(case_id, status, result.duration_ms)
+                    results.append(result)
                 except Exception as e:
-                    print(f"  Error running {case.name}: {e}")
+                    completed += 1
+                    show_progress(case_id, "failed", 0)
+                    print(f"\n  ⚠️  Error: {case.name}: {e}")
+
+        # Final summary line
+        total_time = time.time() - start_time
+        print(f"\n\n{'='*60}")
+        print(f"  Completed in {total_time:.1f}s | Passed: {passed}/{total} ({passed/total*100:.1f}%)")
+        print(f"{'='*60}")
 
         # Build summary
         summary = self._build_summary(results)
