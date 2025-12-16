@@ -185,6 +185,8 @@ class BenchmarkRunner:
             result = self._run_aider(work_dir, prompt, error_file)
         elif self.cli_tool == "claude":
             result = self._run_claude(work_dir, prompt)
+        elif self.cli_tool == "pyfix":
+            result = self._run_debugagent(work_dir, prompt)
         else:
             result = self._run_gemini(work_dir, prompt)
         duration_ms = (time.time() - start_time) * 1000
@@ -468,6 +470,71 @@ Please fix this error."""
                 "error": {
                     "type": "NotFound",
                     "message": "Claude Code not found. Install from: https://github.com/anthropics/claude-code",
+                }
+            }
+        except Exception as e:
+            return {
+                "error": {
+                    "type": "Exception",
+                    "message": str(e),
+                }
+            }
+
+    def _run_debugagent(self, work_dir: Path, prompt: str) -> dict:
+        """Run PyFix debug agent.
+
+        PyFix is a custom debug agent that analyzes Python errors
+        and applies fixes automatically.
+        """
+        # Find the main file to fix
+        py_files = list(work_dir.glob("*.py"))
+        if not py_files:
+            return {"error": {"type": "NoFile", "message": "No Python files found"}}
+
+        main_file = work_dir / "main.py" if (work_dir / "main.py").exists() else py_files[0]
+
+        try:
+            result = subprocess.run(
+                ["pyfix", str(main_file)],
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+            )
+
+            if os.environ.get("DEBUG"):
+                print(f"    [DEBUG] pyfix returncode: {result.returncode}")
+                print(f"    [DEBUG] stdout length: {len(result.stdout)}")
+                print(f"    [DEBUG] stderr: {result.stderr[:500] if result.stderr else 'empty'}")
+
+            # Check for success indicator in output
+            success = "✅" in result.stdout or result.returncode == 0
+
+            if success:
+                return {
+                    "response": result.stdout,
+                    "error": None,
+                }
+
+            return {
+                "error": {
+                    "type": "FixFailed",
+                    "message": result.stderr or result.stdout or f"Exit code: {result.returncode}",
+                }
+            }
+
+        except subprocess.TimeoutExpired:
+            return {
+                "error": {
+                    "type": "Timeout",
+                    "message": f"PyFix timed out after {self.timeout}s",
+                }
+            }
+        except FileNotFoundError:
+            return {
+                "error": {
+                    "type": "NotFound",
+                    "message": "PyFix not found. Make sure 'pyfix' command is in PATH.",
                 }
             }
         except Exception as e:
@@ -1189,9 +1256,9 @@ def main():
     )
     parser.add_argument(
         "--cli",
-        choices=["gemini", "aider", "claude"],
+        choices=["gemini", "aider", "claude", "pyfix"],
         default="gemini",
-        help="Which CLI tool to use (gemini, aider, or claude)",
+        help="Which CLI tool to use (gemini, aider, claude, or pyfix)",
     )
     parser.add_argument(
         "--model",
