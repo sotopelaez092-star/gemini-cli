@@ -645,12 +645,19 @@ Please fix this error."""
         """
         import asyncio
 
-        # Find the main file to fix
-        py_files = list(work_dir.glob("*.py"))
-        if not py_files:
-            return {"error": {"type": "NoFile", "message": "No Python files found"}}
-
-        main_file = work_dir / "main.py" if (work_dir / "main.py").exists() else py_files[0]
+        # Find the main file to fix (check root first, then subdirectories)
+        main_file = work_dir / "main.py"
+        if not main_file.exists():
+            # Try to find main.py in subdirectories
+            main_files = list(work_dir.glob("**/main.py"))
+            if main_files:
+                main_file = main_files[0]
+            else:
+                # Fall back to any .py file
+                py_files = list(work_dir.glob("**/*.py"))
+                if not py_files:
+                    return {"error": {"type": "NoFile", "message": "No Python files found"}}
+                main_file = py_files[0]
 
         # Check if we should use direct import mode
         pyfix_path = os.environ.get("PYFIX_PATH")
