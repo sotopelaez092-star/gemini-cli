@@ -195,21 +195,52 @@ Please fix this error."""
                 timeout=self.timeout,
             )
 
-            if result.returncode != 0 and not result.stdout:
+            # Debug: print raw output if verbose
+            if os.environ.get("DEBUG"):
+                print(f"    [DEBUG] returncode: {result.returncode}")
+                print(f"    [DEBUG] stdout length: {len(result.stdout)}")
+                print(f"    [DEBUG] stderr: {result.stderr[:200] if result.stderr else 'empty'}")
+
+            # Try to parse JSON from stdout first
+            if result.stdout.strip():
+                try:
+                    return json.loads(result.stdout)
+                except json.JSONDecodeError:
+                    # stdout exists but not valid JSON
+                    return {
+                        "response": result.stdout,
+                        "error": None,
+                    }
+
+            # stdout is empty - check if there's an actual error
+            # Filter out non-error messages from stderr
+            stderr_lines = result.stderr.split('\n') if result.stderr else []
+            error_lines = [
+                line for line in stderr_lines
+                if line.strip() and not any(skip in line for skip in [
+                    "YOLO mode is enabled",
+                    "StartupProfiler",
+                    "INFO",
+                    "DEBUG",
+                ])
+            ]
+
+            if result.returncode != 0 and error_lines:
                 return {
                     "error": {
                         "type": "ExecutionError",
-                        "message": result.stderr or f"Exit code: {result.returncode}",
+                        "message": '\n'.join(error_lines) or f"Exit code: {result.returncode}",
                     }
                 }
 
-            try:
-                return json.loads(result.stdout)
-            except json.JSONDecodeError:
-                return {
-                    "response": result.stdout,
-                    "error": None,
-                }
+            # No stdout and no real errors - might be a configuration issue
+            return {
+                "error": {
+                    "type": "NoOutput",
+                    "message": "Gemini CLI produced no output. Check if it's properly configured.",
+                },
+                "stderr": result.stderr,
+            }
 
         except subprocess.TimeoutExpired:
             return {
