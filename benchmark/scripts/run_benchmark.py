@@ -483,9 +483,12 @@ Please fix this error."""
     def _run_debugagent(self, work_dir: Path, prompt: str) -> dict:
         """Run PyFix debug agent.
 
-        PyFix is a custom debug agent that analyzes Python errors
-        and applies fixes automatically.
+        Supports two modes:
+        1. Direct import (if PYFIX_PATH env var is set)
+        2. CLI subprocess (if pyfix command is in PATH)
         """
+        import asyncio
+
         # Find the main file to fix
         py_files = list(work_dir.glob("*.py"))
         if not py_files:
@@ -493,6 +496,64 @@ Please fix this error."""
 
         main_file = work_dir / "main.py" if (work_dir / "main.py").exists() else py_files[0]
 
+        # Check if we should use direct import mode
+        pyfix_path = os.environ.get("PYFIX_PATH")
+        if pyfix_path:
+            return self._run_debugagent_import(work_dir, main_file, pyfix_path)
+
+        # Fall back to CLI mode
+        return self._run_debugagent_cli(work_dir, main_file)
+
+    def _run_debugagent_import(self, work_dir: Path, main_file: Path, pyfix_path: str) -> dict:
+        """Run debug agent via direct Python import."""
+        import asyncio
+
+        try:
+            # Add debug agent path to sys.path
+            if pyfix_path not in sys.path:
+                sys.path.insert(0, pyfix_path)
+
+            from src.agent.debug_agent_new import DebugAgent
+
+            if os.environ.get("DEBUG"):
+                print(f"    [DEBUG] Using direct import from {pyfix_path}")
+                print(f"    [DEBUG] main_file: {main_file}")
+
+            agent = DebugAgent(project_path=str(work_dir))
+            result = asyncio.run(
+                agent.debug_file(str(main_file), max_iterations=5, auto_save=True)
+            )
+
+            if result.get("success"):
+                return {
+                    "response": result.get("message", "Fix applied"),
+                    "error": None,
+                }
+
+            return {
+                "error": {
+                    "type": "FixFailed",
+                    "message": result.get("message", "Unknown error"),
+                }
+            }
+
+        except ImportError as e:
+            return {
+                "error": {
+                    "type": "ImportError",
+                    "message": f"Failed to import DebugAgent: {e}. Check PYFIX_PATH={pyfix_path}",
+                }
+            }
+        except Exception as e:
+            return {
+                "error": {
+                    "type": "Exception",
+                    "message": str(e),
+                }
+            }
+
+    def _run_debugagent_cli(self, work_dir: Path, main_file: Path) -> dict:
+        """Run debug agent via CLI subprocess."""
         try:
             result = subprocess.run(
                 ["pyfix", str(main_file)],
@@ -534,7 +595,7 @@ Please fix this error."""
             return {
                 "error": {
                     "type": "NotFound",
-                    "message": "PyFix not found. Make sure 'pyfix' command is in PATH.",
+                    "message": "PyFix not found. Install it or set PYFIX_PATH env var.",
                 }
             }
         except Exception as e:
