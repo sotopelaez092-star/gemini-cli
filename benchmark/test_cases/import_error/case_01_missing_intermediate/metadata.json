@@ -1,0 +1,10 @@
+{
+  "error_type": "ImportError",
+  "case_id": "import_error_01_missing_intermediate",
+  "description": "Missing intermediate package 'v2' in import path",
+  "error_file": "main.py",
+  "error_message": "ModuleNotFoundError: No module named 'api.endpoints'",
+  "expected_fix": "from api.endpoints.users -> from api.v2.endpoints.users",
+  "difficulty": "medium",
+  "files_involved": ["main.py", "api/v2/endpoints/users.py"]
+}

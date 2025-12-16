@@ -1,0 +1,11 @@
+{
+  "error_type": "NameError",
+  "case_id": "name_error_01_multi_level",
+  "description": "Method typo in multi-level package hierarchy (4 levels deep)",
+  "error_file": "app/main.py",
+  "error_message": "'AnalyticsService' object has no attribute 'proccess_metrics'",
+  "expected_fix": "proccess_metrics -> process_metrics",
+  "difficulty": "medium",
+  "files_involved": ["app/main.py", "app/services/analytics.py"],
+  "requires_exploration": true
+}

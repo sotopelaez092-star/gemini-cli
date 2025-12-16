@@ -1,0 +1,10 @@
+{
+  "error_type": "KeyError",
+  "case_id": "key_error_05_env_var_key",
+  "description": "Environment variable key has APP_ prefix",
+  "error_file": "main.py",
+  "error_message": "KeyError: 'API_KEY'",
+  "expected_fix": "config['API_KEY'] -> config['APP_API_KEY']",
+  "difficulty": "medium",
+  "files_involved": ["main.py", "env_loader.py"]
+}

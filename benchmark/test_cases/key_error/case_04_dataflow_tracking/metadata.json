@@ -1,0 +1,11 @@
+{
+  "error_type": "KeyError",
+  "case_id": "key_error_04_dataflow_tracking",
+  "description": "Key error requiring multi-file data flow tracking",
+  "error_file": "main.py",
+  "error_message": "KeyError: 'name'",
+  "expected_fix": "user_data['name'] -> user_data['full_name']",
+  "difficulty": "hard",
+  "files_involved": ["main.py", "services/user_service.py", "repositories/user_repository.py", "models/user.py"],
+  "note": "Must trace: main.py -> UserService -> UserRepository -> User.to_dict()"
+}

@@ -1,0 +1,11 @@
+{
+  "error_type": "CircularImport",
+  "case_id": "circular_import_02_triangle_abc",
+  "description": "Three-way circular import: Auth -> User -> Audit -> Auth",
+  "error_file": "main.py",
+  "error_message": "ImportError: cannot import name 'AuthService' from partially initialized module",
+  "expected_fix": "Break cycle by using lazy imports or dependency injection",
+  "difficulty": "hard",
+  "files_involved": ["services/auth_service.py", "services/user_service.py", "services/audit_service.py"],
+  "cycle": ["auth_service", "user_service", "audit_service", "auth_service"]
+}

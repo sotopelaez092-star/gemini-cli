@@ -1,0 +1,11 @@
+{
+  "error_type": "CircularImport",
+  "case_id": "circular_import_05_registry_pattern",
+  "description": "Circular import in registry/plugin pattern",
+  "error_file": "main.py",
+  "error_message": "ImportError: cannot import name 'registry' from partially initialized module 'plugins'",
+  "expected_fix": "Lazy load plugins OR pass registry as parameter instead of importing",
+  "difficulty": "hard",
+  "files_involved": ["plugins/__init__.py", "plugins/registry.py", "plugins/base_plugin.py"],
+  "cycle": ["plugins.__init__", "base_plugin", "plugins.__init__"]
+}

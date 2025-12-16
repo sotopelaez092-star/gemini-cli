@@ -1,0 +1,11 @@
+{
+  "error_type": "CircularImport",
+  "case_id": "circular_import_04_factory_pattern",
+  "description": "Circular import in factory pattern",
+  "error_file": "main.py",
+  "error_message": "ImportError: cannot import name 'ShapeFactory' from partially initialized module",
+  "expected_fix": "Remove type hint import OR use string annotation 'ShapeFactory'",
+  "difficulty": "hard",
+  "files_involved": ["factory/shape_factory.py", "shapes/circle.py"],
+  "cycle": ["shape_factory", "circle", "shape_factory"]
+}

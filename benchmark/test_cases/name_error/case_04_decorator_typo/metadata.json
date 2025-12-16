@@ -1,0 +1,10 @@
+{
+  "error_type": "NameError",
+  "case_id": "name_error_04_decorator_typo",
+  "description": "Typo in decorator name usage",
+  "error_file": "main.py",
+  "error_message": "NameError: name 'timit' is not defined",
+  "expected_fix": "@timit -> @time_it",
+  "difficulty": "hard",
+  "files_involved": ["main.py", "decorators/__init__.py", "decorators/timing.py"]
+}

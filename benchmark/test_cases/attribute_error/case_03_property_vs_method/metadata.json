@@ -1,0 +1,10 @@
+{
+  "error_type": "AttributeError",
+  "case_id": "attribute_error_03_property_vs_method",
+  "description": "Calling a property as if it were a method",
+  "error_file": "main.py",
+  "error_message": "'float' object is not callable",
+  "expected_fix": "order.total() -> order.total (remove parentheses)",
+  "difficulty": "medium",
+  "files_involved": ["main.py", "models/order.py"]
+}

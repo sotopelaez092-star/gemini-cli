@@ -1,0 +1,11 @@
+{
+  "error_type": "AttributeError",
+  "case_id": "attribute_error_01_inheritance_chain",
+  "description": "Method typo requires tracing through 3-level inheritance chain",
+  "error_file": "main.py",
+  "error_message": "'AdminUser' object has no attribute 'get_permsissions'",
+  "expected_fix": "get_permsissions -> get_permissions",
+  "difficulty": "hard",
+  "files_involved": ["main.py", "models/admin_user.py", "models/authenticated_user.py", "models/base_user.py"],
+  "inheritance_chain": ["AdminUser", "AuthenticatedUser", "BaseUser"]
+}

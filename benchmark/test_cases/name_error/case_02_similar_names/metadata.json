@@ -1,0 +1,11 @@
+{
+  "error_type": "NameError",
+  "case_id": "name_error_02_similar_names",
+  "description": "Confusion between similar function names (process_data vs process_date vs parse_date)",
+  "error_file": "main.py",
+  "error_message": "'DataProcessor' object has no attribute 'process_date'",
+  "expected_fix": "process_date -> process_data",
+  "difficulty": "hard",
+  "files_involved": ["main.py", "data_handlers.py", "utils/date_utils.py"],
+  "confusion_candidates": ["process_data", "process_date", "parse_date", "format_date"]
+}

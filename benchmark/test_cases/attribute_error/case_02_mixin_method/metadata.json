@@ -1,0 +1,11 @@
+{
+  "error_type": "AttributeError",
+  "case_id": "attribute_error_02_mixin_method",
+  "description": "Method typo - method defined in Mixin class",
+  "error_file": "main.py",
+  "error_message": "'Article' object has no attribute 'to_jason'",
+  "expected_fix": "to_jason -> to_json",
+  "difficulty": "hard",
+  "files_involved": ["main.py", "models/article.py", "models/base_content.py", "models/mixins.py"],
+  "note": "Method is in SerializableMixin, multiple inheritance path"
+}

@@ -1,0 +1,10 @@
+{
+  "error_type": "AttributeError",
+  "case_id": "attribute_error_05_classmethod_instance",
+  "description": "Wrong method name for classmethod",
+  "error_file": "main.py",
+  "error_message": "'UserFactory' object has no attribute 'create_from_dict'",
+  "expected_fix": "factory.create_from_dict -> UserFactory.from_dict or factory.from_dict",
+  "difficulty": "hard",
+  "files_involved": ["main.py", "factories/user_factory.py"]
+}

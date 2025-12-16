@@ -1,9 +1,0 @@
-{
-  "error_type": "AttributeError",
-  "case_id": "attribute_error_02",
-  "description": "Accessing old/renamed attribute name",
-  "error_file": "main.py",
-  "error_message": "'Product' object has no attribute 'prce'",
-  "expected_fix": "prce -> price",
-  "difficulty": "easy"
-}

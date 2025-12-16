@@ -1,0 +1,10 @@
+{
+  "error_type": "KeyError",
+  "case_id": "key_error_03_renamed_key",
+  "description": "Config key renamed/restructured in new version",
+  "error_file": "main.py",
+  "error_message": "KeyError: 'log_level'",
+  "expected_fix": "config['log_level'] -> config['logging']['level']",
+  "difficulty": "hard",
+  "files_involved": ["main.py", "config_loader.py"]
+}

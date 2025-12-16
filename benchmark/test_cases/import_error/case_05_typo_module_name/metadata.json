@@ -1,0 +1,10 @@
+{
+  "error_type": "ImportError",
+  "case_id": "import_error_05_typo_module_name",
+  "description": "Typo in module name (authentification vs authentication)",
+  "error_file": "main.py",
+  "error_message": "ModuleNotFoundError: No module named 'services.authentification'",
+  "expected_fix": "authentification -> authentication",
+  "difficulty": "easy",
+  "files_involved": ["main.py", "services/authentication.py"]
+}

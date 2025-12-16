@@ -1,0 +1,11 @@
+{
+  "error_type": "NameError",
+  "case_id": "name_error_05_constant_case",
+  "description": "Constant naming convention inconsistency (UPPER_CASE vs PascalCase)",
+  "error_file": "main.py",
+  "error_message": "NameError: name 'API_TIMEOUT' is not defined",
+  "expected_fix": "API_TIMEOUT -> Api_Timeout (match the actual definition)",
+  "difficulty": "medium",
+  "files_involved": ["main.py", "config/settings.py"],
+  "note": "Codebase has inconsistent naming, need to match actual definition"
+}

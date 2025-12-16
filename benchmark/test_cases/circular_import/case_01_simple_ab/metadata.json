@@ -1,0 +1,11 @@
+{
+  "error_type": "CircularImport",
+  "case_id": "circular_import_01_simple_ab",
+  "description": "Simple A -> B -> A circular import",
+  "error_file": "main.py",
+  "error_message": "ImportError: cannot import name 'ClassA' from partially initialized module 'module_a'",
+  "expected_fix": "Move import inside method OR use dependency injection",
+  "difficulty": "medium",
+  "files_involved": ["main.py", "module_a.py", "module_b.py"],
+  "cycle": ["module_a", "module_b", "module_a"]
+}

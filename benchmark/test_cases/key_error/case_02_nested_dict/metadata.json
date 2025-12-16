@@ -1,0 +1,10 @@
+{
+  "error_type": "KeyError",
+  "case_id": "key_error_02_nested_dict",
+  "description": "Key at wrong nesting level",
+  "error_file": "main.py",
+  "error_message": "KeyError: 'email'",
+  "expected_fix": "response['data']['email'] -> response['data']['user']['email']",
+  "difficulty": "medium",
+  "files_involved": ["main.py", "api_response.py"]
+}

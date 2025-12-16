@@ -1,0 +1,11 @@
+{
+  "error_type": "CircularImport",
+  "case_id": "circular_import_03_type_hint_cycle",
+  "description": "Circular import caused by type annotations",
+  "error_file": "main.py",
+  "error_message": "ImportError: cannot import name 'Order' from partially initialized module 'models.order'",
+  "expected_fix": "Use TYPE_CHECKING guard: from typing import TYPE_CHECKING; if TYPE_CHECKING: from models.order import Order",
+  "difficulty": "hard",
+  "files_involved": ["models/order.py", "models/order_item.py"],
+  "cycle": ["order", "order_item", "order"]
+}

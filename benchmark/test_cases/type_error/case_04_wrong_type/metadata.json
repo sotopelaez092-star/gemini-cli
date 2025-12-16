@@ -1,0 +1,10 @@
+{
+  "error_type": "TypeError",
+  "case_id": "type_error_04_wrong_type",
+  "description": "Passing dict to function expecting list",
+  "error_file": "main.py",
+  "error_message": "TypeError: Expected list, got dict",
+  "expected_fix": "Use aggregate_dict_values(data) OR aggregate_values(list(data.values()))",
+  "difficulty": "medium",
+  "files_involved": ["main.py", "data_processing.py"]
+}

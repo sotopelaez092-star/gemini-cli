@@ -1,0 +1,10 @@
+{
+  "error_type": "NameError",
+  "case_id": "name_error_03_init_export",
+  "description": "Typo when importing symbol exported from __init__.py",
+  "error_file": "main.py",
+  "error_message": "cannot import name 'validata_email' from 'validators'",
+  "expected_fix": "validata_email -> validate_email",
+  "difficulty": "medium",
+  "files_involved": ["main.py", "validators/__init__.py", "validators/email_validator.py"]
+}

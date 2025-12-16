@@ -1,0 +1,10 @@
+{
+  "error_type": "TypeError",
+  "case_id": "type_error_02_kwarg_renamed",
+  "description": "Keyword argument was renamed (timeout_seconds -> timeout)",
+  "error_file": "main.py",
+  "error_message": "TypeError: HttpClient.get() got an unexpected keyword argument 'timeout_seconds'",
+  "expected_fix": "timeout_seconds -> timeout",
+  "difficulty": "hard",
+  "files_involved": ["main.py", "http_client.py"]
+}

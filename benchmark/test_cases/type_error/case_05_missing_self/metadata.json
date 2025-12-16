@@ -1,0 +1,10 @@
+{
+  "error_type": "TypeError",
+  "case_id": "type_error_05_missing_self",
+  "description": "Calling instance method on class without instance",
+  "error_file": "main.py",
+  "error_message": "TypeError: NotificationService.send_bulk() missing 1 required positional argument: 'body'",
+  "expected_fix": "Create instance first: service = NotificationService(); service.send_bulk(...)",
+  "difficulty": "medium",
+  "files_involved": ["main.py", "services/notification.py"]
+}

@@ -1,0 +1,10 @@
+{
+  "error_type": "KeyError",
+  "case_id": "key_error_01_dict_key_typo",
+  "description": "Simple dict key typo",
+  "error_file": "main.py",
+  "error_message": "KeyError: 'hostname'",
+  "expected_fix": "hostname -> host",
+  "difficulty": "easy",
+  "files_involved": ["main.py", "config.py"]
+}
