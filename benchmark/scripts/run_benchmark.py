@@ -181,7 +181,7 @@ Please fix this error."""
         """Run Gemini CLI and return the JSON result."""
         cmd = [
             self.gemini_cmd,
-            "--prompt", prompt,
+            prompt,  # Positional argument (--prompt is deprecated)
             "--output-format", "json",
             "--approval-mode", "yolo",  # Auto-approve all actions
         ]
