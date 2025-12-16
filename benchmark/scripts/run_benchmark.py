@@ -2,11 +2,12 @@
 """
 AI CLI Cross-File Python Debug Benchmark Runner
 
-Supports: Gemini CLI, Aider
+Supports: Gemini CLI, Aider, Claude Code
 
 Usage:
     python run_benchmark.py [--error-type NAME_ERROR] [--parallel 4] [--timeout 120]
     python run_benchmark.py --cli aider --model openai/gemini-2.0-flash
+    python run_benchmark.py --cli claude --timeout 300
 """
 
 import argparse
@@ -135,6 +136,8 @@ class BenchmarkRunner:
         start_time = time.time()
         if self.cli_tool == "aider":
             result = self._run_aider(work_dir, prompt, error_file)
+        elif self.cli_tool == "claude":
+            result = self._run_claude(work_dir, prompt)
         else:
             result = self._run_gemini(work_dir, prompt)
         duration_ms = (time.time() - start_time) * 1000
@@ -353,6 +356,71 @@ Please fix this error."""
                 "error": {
                     "type": "NotFound",
                     "message": "Aider not found. Install with: pip install aider-chat",
+                }
+            }
+        except Exception as e:
+            return {
+                "error": {
+                    "type": "Exception",
+                    "message": str(e),
+                }
+            }
+
+    def _run_claude(self, work_dir: Path, prompt: str) -> dict:
+        """Run Claude Code CLI and return the result.
+
+        Claude Code uses a ReAct-like pattern similar to Gemini CLI,
+        with iterative tool calling (Read, Edit, Bash, etc.).
+        """
+        cmd = [
+            "claude",
+            "--print",  # Print response without interactive mode
+            "--dangerously-skip-permissions",  # Auto-approve all actions
+            prompt,
+        ]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+            )
+
+            if os.environ.get("DEBUG"):
+                print(f"    [DEBUG] claude returncode: {result.returncode}")
+                print(f"    [DEBUG] stdout length: {len(result.stdout)}")
+                print(f"    [DEBUG] stderr: {result.stderr[:500] if result.stderr else 'empty'}")
+
+            # Claude outputs to stdout
+            if result.returncode == 0:
+                return {
+                    "response": result.stdout,
+                    "error": None,
+                }
+
+            # Check for errors
+            error_msg = result.stderr or result.stdout or f"Exit code: {result.returncode}"
+            return {
+                "error": {
+                    "type": "ClaudeError",
+                    "message": error_msg[:500],
+                }
+            }
+
+        except subprocess.TimeoutExpired:
+            return {
+                "error": {
+                    "type": "Timeout",
+                    "message": f"Claude Code timed out after {self.timeout}s",
+                }
+            }
+        except FileNotFoundError:
+            return {
+                "error": {
+                    "type": "NotFound",
+                    "message": "Claude Code not found. Install from: https://github.com/anthropics/claude-code",
                 }
             }
         except Exception as e:
@@ -779,9 +847,9 @@ def main():
     )
     parser.add_argument(
         "--cli",
-        choices=["gemini", "aider"],
+        choices=["gemini", "aider", "claude"],
         default="gemini",
-        help="Which CLI tool to use (gemini or aider)",
+        help="Which CLI tool to use (gemini, aider, or claude)",
     )
     parser.add_argument(
         "--model",
