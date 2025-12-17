@@ -590,12 +590,16 @@ Please fix this error."""
         cmd.append(prompt)
 
         try:
+            # Pass environment variables to subprocess (needed for proxy, API keys, etc.)
+            env = os.environ.copy()
+
             result = subprocess.run(
                 cmd,
                 cwd=work_dir,
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
+                env=env,
             )
 
             if os.environ.get("DEBUG"):
