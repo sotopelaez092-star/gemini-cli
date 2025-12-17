@@ -671,7 +671,7 @@ Please fix this error."""
         """Run debug agent via direct Python import."""
         import asyncio
         import io
-        from contextlib import redirect_stdout, redirect_stderr
+        import os
 
         try:
             # Add debug agent path to sys.path
@@ -714,16 +714,20 @@ Please fix this error."""
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
 
-            # Suppress agent output unless verbose mode
-            captured_output = io.StringIO()
+            # Suppress agent output by replacing stdout/stderr entirely
+            if not verbose:
+                old_stdout = sys.stdout
+                old_stderr = sys.stderr
+                sys.stdout = io.StringIO()
+                sys.stderr = io.StringIO()
+
             try:
-                if verbose:
-                    result = loop.run_until_complete(run_with_cleanup())
-                else:
-                    # Redirect stdout/stderr to suppress agent's verbose output
-                    with redirect_stdout(captured_output), redirect_stderr(captured_output):
-                        result = loop.run_until_complete(run_with_cleanup())
+                result = loop.run_until_complete(run_with_cleanup())
             finally:
+                # Restore stdout/stderr
+                if not verbose:
+                    sys.stdout = old_stdout
+                    sys.stderr = old_stderr
                 # Proper cleanup
                 try:
                     loop.run_until_complete(loop.shutdown_asyncgens())
