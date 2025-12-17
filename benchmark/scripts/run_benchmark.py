@@ -140,6 +140,7 @@ class BenchmarkRunner:
         cli_tool: str = "gemini",  # "gemini" or "aider"
         gemini_cmd: str = "gemini",
         aider_model: str = "openai/gemini-2.0-flash",
+        claude_model: str = None,  # Model for Claude Code (e.g., "haiku", "sonnet", "opus")
         timeout: int = 120,
         parallel: int = 1,
     ):
@@ -148,6 +149,7 @@ class BenchmarkRunner:
         self.cli_tool = cli_tool
         self.gemini_cmd = gemini_cmd
         self.aider_model = aider_model
+        self.claude_model = claude_model
         self.timeout = timeout
         self.parallel = parallel
         self.results_dir.mkdir(parents=True, exist_ok=True)
@@ -579,8 +581,13 @@ Please fix this error."""
             "claude",
             "--print",  # Print response without interactive mode
             "--dangerously-skip-permissions",  # Auto-approve all actions
-            prompt,
         ]
+
+        # Add model if specified (e.g., "haiku", "sonnet", "opus")
+        if self.claude_model:
+            cmd.extend(["--model", self.claude_model])
+
+        cmd.append(prompt)
 
         try:
             result = subprocess.run(
@@ -1740,14 +1747,17 @@ def main():
     parser.add_argument(
         "--model",
         default="openai/gemini-2.0-flash",
-        help="Model to use for aider (e.g., openai/gemini-2.0-flash, gpt-4)",
+        help="Model to use for aider (e.g., openai/gemini-2.0-flash, gpt-4) or claude (e.g., haiku, sonnet, opus)",
     )
 
     args = parser.parse_args()
 
     print(f"Using CLI tool: {args.cli}")
-    if args.cli == "aider":
+    if args.cli in ("aider", "claude"):
         print(f"Using model: {args.model}")
+
+    # Determine claude_model only if using claude CLI
+    claude_model = args.model if args.cli == "claude" else None
 
     runner = BenchmarkRunner(
         test_cases_dir=args.test_cases_dir,
@@ -1755,6 +1765,7 @@ def main():
         cli_tool=args.cli,
         gemini_cmd=args.gemini_cmd,
         aider_model=args.model,
+        claude_model=claude_model,
         timeout=args.timeout,
         parallel=args.parallel,
     )
