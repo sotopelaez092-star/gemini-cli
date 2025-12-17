@@ -674,16 +674,25 @@ Please fix this error."""
         # Fall back to CLI mode
         return self._run_debugagent_cli(work_dir, main_file)
 
+    # Thread lock for sys.path modification (class-level)
+    _syspath_lock = None
+
     def _run_debugagent_import(self, work_dir: Path, main_file: Path, pyfix_path: str) -> dict:
         """Run debug agent via direct Python import."""
         import asyncio
         import io
         import os
+        import threading
+
+        # Initialize lock once
+        if BenchmarkRunner._syspath_lock is None:
+            BenchmarkRunner._syspath_lock = threading.Lock()
 
         try:
-            # Add debug agent path to sys.path
-            if pyfix_path not in sys.path:
-                sys.path.insert(0, pyfix_path)
+            # Add debug agent path to sys.path (thread-safe)
+            with BenchmarkRunner._syspath_lock:
+                if pyfix_path not in sys.path:
+                    sys.path.insert(0, pyfix_path)
 
             from src.agent.debug_agent_new import DebugAgent
 
@@ -711,37 +720,18 @@ Please fix this error."""
                     if tasks:
                         await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Use get_event_loop for better compatibility
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_closed():
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+            # Create a NEW event loop for each call (thread-safe for parallel execution)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
 
-            # Suppress agent output at file descriptor level (more robust)
-            devnull_fd = None
-            old_stdout_fd = None
-            old_stderr_fd = None
+            # Suppress agent output (thread-safe: only replace sys.stdout/stderr, not fd-level)
             old_stdout = None
             old_stderr = None
 
             if not verbose:
                 try:
-                    # Save original file descriptors
-                    old_stdout_fd = os.dup(1)
-                    old_stderr_fd = os.dup(2)
                     old_stdout = sys.stdout
                     old_stderr = sys.stderr
-
-                    # Redirect to /dev/null at fd level
-                    devnull_fd = os.open(os.devnull, os.O_WRONLY)
-                    os.dup2(devnull_fd, 1)
-                    os.dup2(devnull_fd, 2)
-
-                    # Also replace sys.stdout/stderr
                     sys.stdout = io.StringIO()
                     sys.stderr = io.StringIO()
                 except Exception:
@@ -750,17 +740,9 @@ Please fix this error."""
             try:
                 result = loop.run_until_complete(run_with_cleanup())
             finally:
-                # Restore stdout/stderr
+                # Restore stdout/stderr (thread-safe)
                 if not verbose:
                     try:
-                        if old_stdout_fd is not None:
-                            os.dup2(old_stdout_fd, 1)
-                            os.close(old_stdout_fd)
-                        if old_stderr_fd is not None:
-                            os.dup2(old_stderr_fd, 2)
-                            os.close(old_stderr_fd)
-                        if devnull_fd is not None:
-                            os.close(devnull_fd)
                         if old_stdout is not None:
                             sys.stdout = old_stdout
                         if old_stderr is not None:
@@ -770,6 +752,11 @@ Please fix this error."""
                 # Proper cleanup
                 try:
                     loop.run_until_complete(loop.shutdown_asyncgens())
+                except Exception:
+                    pass
+                # Close the event loop (important for thread cleanup)
+                try:
+                    loop.close()
                 except Exception:
                     pass
 
