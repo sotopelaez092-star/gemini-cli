@@ -714,20 +714,52 @@ Please fix this error."""
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
 
-            # Suppress agent output by replacing stdout/stderr entirely
+            # Suppress agent output at file descriptor level (more robust)
+            devnull_fd = None
+            old_stdout_fd = None
+            old_stderr_fd = None
+            old_stdout = None
+            old_stderr = None
+
             if not verbose:
-                old_stdout = sys.stdout
-                old_stderr = sys.stderr
-                sys.stdout = io.StringIO()
-                sys.stderr = io.StringIO()
+                try:
+                    # Save original file descriptors
+                    old_stdout_fd = os.dup(1)
+                    old_stderr_fd = os.dup(2)
+                    old_stdout = sys.stdout
+                    old_stderr = sys.stderr
+
+                    # Redirect to /dev/null at fd level
+                    devnull_fd = os.open(os.devnull, os.O_WRONLY)
+                    os.dup2(devnull_fd, 1)
+                    os.dup2(devnull_fd, 2)
+
+                    # Also replace sys.stdout/stderr
+                    sys.stdout = io.StringIO()
+                    sys.stderr = io.StringIO()
+                except Exception:
+                    pass  # If redirection fails, continue without suppression
 
             try:
                 result = loop.run_until_complete(run_with_cleanup())
             finally:
                 # Restore stdout/stderr
                 if not verbose:
-                    sys.stdout = old_stdout
-                    sys.stderr = old_stderr
+                    try:
+                        if old_stdout_fd is not None:
+                            os.dup2(old_stdout_fd, 1)
+                            os.close(old_stdout_fd)
+                        if old_stderr_fd is not None:
+                            os.dup2(old_stderr_fd, 2)
+                            os.close(old_stderr_fd)
+                        if devnull_fd is not None:
+                            os.close(devnull_fd)
+                        if old_stdout is not None:
+                            sys.stdout = old_stdout
+                        if old_stderr is not None:
+                            sys.stderr = old_stderr
+                    except Exception:
+                        pass
                 # Proper cleanup
                 try:
                     loop.run_until_complete(loop.shutdown_asyncgens())
